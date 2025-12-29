@@ -24,6 +24,7 @@
 #include "Engine/StaticMeshActor.h"
 #include "EngineUtils.h"
 #include "GameFramework/SpectatorPawn.h"
+#include "Carla/Game/CarlaSpectatorPawn.h"
 #include "GenericPlatform/GenericPlatformProcess.h"
 #include "Kismet/GameplayStatics.h"
 #include "Materials/MaterialParameterCollection.h"
@@ -340,17 +341,52 @@ void UCarlaEpisode::InitializeAtBeginPlay()
     UE_LOG(LogCarla, Error, TEXT("Can't find player controller!"));
     return;
   }
-  Spectator = PlayerController->GetPawn();
+  
+  // Destroy the default spectator pawn if it exists
+  APawn* DefaultSpectator = PlayerController->GetPawn();
+  if (DefaultSpectator != nullptr)
+  {
+    DefaultSpectator->Destroy();
+  }
+  
+  // Spawn our custom dual-camera spectator pawn
+  FActorSpawnParameters SpawnParams;
+  SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+  
+  // Get the default spawn location (or use a default location if none exists)
+  FVector SpawnLocation = FVector(0.0f, 0.0f, 200.0f); // 200 units above ground
+  FRotator SpawnRotation = FRotator::ZeroRotator;
+  
+  if (DefaultSpectator != nullptr)
+  {
+    SpawnLocation = DefaultSpectator->GetActorLocation();
+    SpawnRotation = DefaultSpectator->GetActorRotation();
+  }
+  
+  // Spawn the custom spectator pawn
+  Spectator = World->SpawnActor<ACarlaSpectatorPawn>(
+    ACarlaSpectatorPawn::StaticClass(),
+    SpawnLocation,
+    SpawnRotation,
+    SpawnParams
+  );
+  
   if (Spectator != nullptr)
   {
+    // Make the player controller possess the new spectator
+    PlayerController->Possess(Spectator);
+    
+    // Register the spectator as a CARLA actor
     FActorDescription Description;
     Description.Id = TEXT("spectator");
     Description.Class = Spectator->GetClass();
     ActorDispatcher->RegisterActor(*Spectator, Description);
+    
+    UE_LOG(LogCarla, Log, TEXT("Custom dual-camera spectator pawn spawned successfully"));
   }
   else
   {
-    UE_LOG(LogCarla, Error, TEXT("Can't find spectator!"));
+    UE_LOG(LogCarla, Error, TEXT("Failed to spawn custom spectator pawn!"));
   }
 
   // material parameters collection
