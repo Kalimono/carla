@@ -85,6 +85,20 @@ public:
   USceneCaptureComponent2D* RightSceneCapture;
 
   /**
+   * Rear-view scene capture component for left mirror (180° rear view).
+   * Captures a wide rear view for cropping in the left rear-view mirror.
+   */
+  UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
+  USceneCaptureComponent2D* LeftRearSceneCapture;
+
+  /**
+   * Rear-view scene capture component for right mirror (180° rear view).
+   * Captures a wide rear view for cropping in the right rear-view mirror.
+   */
+  UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
+  USceneCaptureComponent2D* RightRearSceneCapture;
+
+  /**
    * Render target for the left view (1920x1080).
    * The LeftSceneCapture renders to this texture.
    */
@@ -97,6 +111,34 @@ public:
    */
   UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
   UTextureRenderTarget2D* RightRenderTarget;
+
+  /**
+   * Render target for left rear-view mirror (wider for cropping).
+   * The LeftRearSceneCapture renders to this texture.
+   */
+  UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
+  UTextureRenderTarget2D* LeftRearRenderTarget;
+
+  /**
+   * Render target for right rear-view mirror (wider for cropping).
+   * The RightRearSceneCapture renders to this texture.
+   */
+  UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
+  UTextureRenderTarget2D* RightRearRenderTarget;
+
+  /**
+   * Horizontal crop offset for left rear-view mirror (0.0 = left edge, 1.0 = right edge).
+   * Controls which portion of the rear view is displayed in the mirror.
+   */
+  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+  float LeftMirrorCropOffset = 0.5f;
+
+  /**
+   * Horizontal crop offset for right rear-view mirror (0.0 = left edge, 1.0 = right edge).
+   * Controls which portion of the rear view is displayed in the mirror.
+   */
+  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+  float RightMirrorCropOffset = 0.5f;
 
   /**
    * Instance of the triple-screen widget (created programmatically).
@@ -124,4 +166,11 @@ private:
    */
   TSharedPtr<FSlateBrush> LeftBrush;
   TSharedPtr<FSlateBrush> RightBrush;
+
+  /**
+   * Slate brushes for rear-view mirrors.
+   * Must persist as member variables for Slate widget lifetime.
+   */
+  TSharedPtr<FSlateBrush> LeftRearBrush;
+  TSharedPtr<FSlateBrush> RightRearBrush;
 };

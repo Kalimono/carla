@@ -14,6 +14,7 @@
 #include "Widgets/SCompoundWidget.h"
 #include "Widgets/Layout/SConstraintCanvas.h"
 #include "Widgets/Layout/SBox.h"
+#include "Widgets/SOverlay.h"
 #include "Widgets/Images/SImage.h"
 #include "Slate/SlateTextures.h"
 #include "Engine/Texture.h"
@@ -53,8 +54,28 @@ ACarlaSpectatorPawn::ACarlaSpectatorPawn(const FObjectInitializer& ObjectInitial
   RightSceneCapture->bCaptureEveryFrame = true;
   RightSceneCapture->bCaptureOnMovement = true;
 
+  // Create the left rear-view scene capture component (REAR VIEW for left mirror - 180° rear)
+  LeftRearSceneCapture = CreateDefaultSubobject<USceneCaptureComponent2D>(TEXT("LeftRearSceneCapture"));
+  LeftRearSceneCapture->SetupAttachment(RootComponent);
+  LeftRearSceneCapture->SetRelativeLocation(FVector(0.0f, 0.0f, 0.0f));
+  LeftRearSceneCapture->SetRelativeRotation(FRotator(0.0f, 180.0f, 0.0f));
+  LeftRearSceneCapture->CaptureSource = SCS_FinalColorLDR;
+  LeftRearSceneCapture->bCaptureEveryFrame = true;
+  LeftRearSceneCapture->bCaptureOnMovement = true;
+
+  // Create the right rear-view scene capture component (REAR VIEW for right mirror - 180° rear)
+  RightRearSceneCapture = CreateDefaultSubobject<USceneCaptureComponent2D>(TEXT("RightRearSceneCapture"));
+  RightRearSceneCapture->SetupAttachment(RootComponent);
+  RightRearSceneCapture->SetRelativeLocation(FVector(0.0f, 0.0f, 0.0f));
+  RightRearSceneCapture->SetRelativeRotation(FRotator(0.0f, 180.0f, 0.0f));
+  RightRearSceneCapture->CaptureSource = SCS_FinalColorLDR;
+  RightRearSceneCapture->bCaptureEveryFrame = true;
+  RightRearSceneCapture->bCaptureOnMovement = true;
+
   LeftRenderTarget = nullptr;
   RightRenderTarget = nullptr;
+  LeftRearRenderTarget = nullptr;
+  RightRearRenderTarget = nullptr;
 }
 
 /**
@@ -77,10 +98,14 @@ void ACarlaSpectatorPawn::EndPlay(const EEndPlayReason::Type EndPlayReason)
   bInitialized = false;
   LeftRenderTarget = nullptr;
   RightRenderTarget = nullptr;
+  LeftRearRenderTarget = nullptr;
+  RightRearRenderTarget = nullptr;
   
   // Clear brush references
   LeftBrush.Reset();
   RightBrush.Reset();
+  LeftRearBrush.Reset();
+  RightRearBrush.Reset();
   
   // Note: Slate widgets are automatically cleaned up by the viewport
   TripleScreenWidgetInstance = nullptr;
@@ -155,7 +180,36 @@ void ACarlaSpectatorPawn::Tick(float DeltaTime)
         TargetWidth, TargetHeight);
     }
 
-    if (LeftRenderTarget && RightRenderTarget)
+    // Create rear-view render targets (wider to allow horizontal cropping)
+    // Width is 3x the mirror width (200) to provide cropping range
+    const int32 RearTargetWidth = 1920;  // Wide rear view for cropping
+    const int32 RearTargetHeight = 1080; // Full height
+
+    // Create LEFT REAR render target
+    LeftRearRenderTarget = NewObject<UTextureRenderTarget2D>(this, TEXT("LeftRearRenderTarget"));
+    if (LeftRearRenderTarget)
+    {
+      LeftRearRenderTarget->InitAutoFormat(RearTargetWidth, RearTargetHeight);
+      LeftRearRenderTarget->RenderTargetFormat = RTF_RGBA8;
+      LeftRearRenderTarget->UpdateResource();
+      LeftRearSceneCapture->TextureTarget = LeftRearRenderTarget;
+      UE_LOG(LogTemp, Log, TEXT("CarlaSpectatorPawn: Created LEFT REAR render target %dx%d"), 
+        RearTargetWidth, RearTargetHeight);
+    }
+
+    // Create RIGHT REAR render target
+    RightRearRenderTarget = NewObject<UTextureRenderTarget2D>(this, TEXT("RightRearRenderTarget"));
+    if (RightRearRenderTarget)
+    {
+      RightRearRenderTarget->InitAutoFormat(RearTargetWidth, RearTargetHeight);
+      RightRearRenderTarget->RenderTargetFormat = RTF_RGBA8;
+      RightRearRenderTarget->UpdateResource();
+      RightRearSceneCapture->TextureTarget = RightRearRenderTarget;
+      UE_LOG(LogTemp, Log, TEXT("CarlaSpectatorPawn: Created RIGHT REAR render target %dx%d"), 
+        RearTargetWidth, RearTargetHeight);
+    }
+
+    if (LeftRenderTarget && RightRenderTarget && LeftRearRenderTarget && RightRearRenderTarget)
     {
       CreateTripleScreenWidget();
       bInitialized = true;
@@ -201,42 +255,116 @@ void ACarlaSpectatorPawn::CreateTripleScreenWidget()
     UE_LOG(LogTemp, Log, TEXT("CarlaSpectatorPawn: Created RIGHT brush"));
   }
 
+  // Create LEFT REAR brush with UV coordinates for cropping
+  LeftRearBrush = MakeShared<FSlateBrush>();
+  if (LeftRearRenderTarget)
+  {
+    LeftRearBrush->SetResourceObject(LeftRearRenderTarget);
+    LeftRearBrush->ImageSize = FVector2D(LeftRearRenderTarget->SizeX, LeftRearRenderTarget->SizeY);
+    LeftRearBrush->DrawAs = ESlateBrushDrawType::Image;
+    // Set UV coordinates to crop based on offset (mirror width 200 / render target width)
+    float MirrorWidthRatio = 200.0f / LeftRearRenderTarget->SizeX;
+    LeftRearBrush->SetUVRegion(FBox2D(
+      FVector2D(LeftMirrorCropOffset - MirrorWidthRatio * 0.5f, 0.0f),
+      FVector2D(LeftMirrorCropOffset + MirrorWidthRatio * 0.5f, 1.0f)
+    ));
+    UE_LOG(LogTemp, Log, TEXT("CarlaSpectatorPawn: Created LEFT REAR brush with crop offset %.2f"), LeftMirrorCropOffset);
+  }
+
+  // Create RIGHT REAR brush with UV coordinates for cropping
+  RightRearBrush = MakeShared<FSlateBrush>();
+  if (RightRearRenderTarget)
+  {
+    RightRearBrush->SetResourceObject(RightRearRenderTarget);
+    RightRearBrush->ImageSize = FVector2D(RightRearRenderTarget->SizeX, RightRearRenderTarget->SizeY);
+    RightRearBrush->DrawAs = ESlateBrushDrawType::Image;
+    // Set UV coordinates to crop based on offset (mirror width 200 / render target width)
+    float MirrorWidthRatio = 200.0f / RightRearRenderTarget->SizeX;
+    RightRearBrush->SetUVRegion(FBox2D(
+      FVector2D(RightMirrorCropOffset - MirrorWidthRatio * 0.5f, 0.0f),
+      FVector2D(RightMirrorCropOffset + MirrorWidthRatio * 0.5f, 1.0f)
+    ));
+    UE_LOG(LogTemp, Log, TEXT("CarlaSpectatorPawn: Created RIGHT REAR brush with crop offset %.2f"), RightMirrorCropOffset);
+  }
+
   // Create Slate constraint canvas with anchor-based positioning (scales dynamically)
   TSharedRef<SConstraintCanvas> Canvas = SNew(SConstraintCanvas)
     
-    // LEFT image (0-33% horizontal using anchors)
+    // LEFT image with rear-view mirror overlay (0-33% horizontal using anchors)
     + SConstraintCanvas::Slot()
     .Anchors(FAnchors(0.0f, 0.0f, 0.33f, 1.0f))  // Left third, full height
     .Offset(FMargin(0.0f, 0.0f, 0.0f, 0.0f))     // No offset, fill anchor area
     .Alignment(FVector2D(0.0f, 0.0f))
     .AutoSize(false)
     [
-      // Use SBox with clipping to crop image instead of stretching
-      SNew(SBox)
-      .HAlign(HAlign_Center)
-      .VAlign(VAlign_Center)
-      .Clipping(EWidgetClipping::ClipToBounds)
+      // Overlay to stack mirror on top of main view
+      SNew(SOverlay)
+      
+      // Main left view
+      + SOverlay::Slot()
       [
-        SNew(SImage)
-        .Image(LeftBrush.Get())
+        SNew(SBox)
+        .HAlign(HAlign_Center)
+        .VAlign(VAlign_Center)
+        .Clipping(EWidgetClipping::ClipToBounds)
+        [
+          SNew(SImage)
+          .Image(LeftBrush.Get())
+        ]
+      ]
+      
+      // Left rear-view mirror (200x600 at top-right of left screen)
+      + SOverlay::Slot()
+      .HAlign(HAlign_Right)
+      .VAlign(VAlign_Top)
+      .Padding(FMargin(0.0f, 20.0f, 20.0f, 0.0f))
+      [
+        SNew(SBox)
+        .WidthOverride(200.0f)
+        .HeightOverride(600.0f)
+        [
+          SNew(SImage)
+          .Image(LeftRearBrush.Get())
+        ]
       ]
     ]
     
-    // RIGHT image (66-100% horizontal using anchors)
+    // RIGHT image with rear-view mirror overlay (66-100% horizontal using anchors)
     + SConstraintCanvas::Slot()
     .Anchors(FAnchors(0.66f, 0.0f, 1.0f, 1.0f))  // Right third, full height
     .Offset(FMargin(0.0f, 0.0f, 0.0f, 0.0f))     // No offset, fill anchor area
     .Alignment(FVector2D(0.0f, 0.0f))
     .AutoSize(false)
     [
-      // Use SBox with clipping to crop image instead of stretching
-      SNew(SBox)
-      .HAlign(HAlign_Center)
-      .VAlign(VAlign_Center)
-      .Clipping(EWidgetClipping::ClipToBounds)
+      // Overlay to stack mirror on top of main view
+      SNew(SOverlay)
+      
+      // Main right view
+      + SOverlay::Slot()
       [
-        SNew(SImage)
-        .Image(RightBrush.Get())
+        SNew(SBox)
+        .HAlign(HAlign_Center)
+        .VAlign(VAlign_Center)
+        .Clipping(EWidgetClipping::ClipToBounds)
+        [
+          SNew(SImage)
+          .Image(RightBrush.Get())
+        ]
+      ]
+      
+      // Right rear-view mirror (200x600 at top-left of right screen)
+      + SOverlay::Slot()
+      .HAlign(HAlign_Left)
+      .VAlign(VAlign_Top)
+      .Padding(FMargin(20.0f, 20.0f, 0.0f, 0.0f))
+      [
+        SNew(SBox)
+        .WidthOverride(200.0f)
+        .HeightOverride(600.0f)
+        [
+          SNew(SImage)
+          .Image(RightRearBrush.Get())
+        ]
       ]
     ];
 
