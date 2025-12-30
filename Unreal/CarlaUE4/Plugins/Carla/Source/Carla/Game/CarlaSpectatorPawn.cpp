@@ -13,6 +13,7 @@
 #include "Slate/SceneViewport.h"
 #include "Widgets/SCompoundWidget.h"
 #include "Widgets/Layout/SConstraintCanvas.h"
+#include "Widgets/Layout/SBox.h"
 #include "Widgets/Images/SImage.h"
 #include "Slate/SlateTextures.h"
 #include "Engine/Texture.h"
@@ -125,28 +126,33 @@ void ACarlaSpectatorPawn::Tick(float DeltaTime)
     UE_LOG(LogTemp, Log, TEXT("CarlaSpectatorPawn: Viewport %dx%d, each camera %dx%d"), 
       ViewportWidth, ViewportHeight, SingleScreenWidth, SingleScreenHeight);
 
+    // Use fixed resolution for render targets (1920x1080 per screen)
+    // This prevents aspect ratio distortion when viewport is resized
+    const int32 TargetWidth = 1920;
+    const int32 TargetHeight = 1080;
+
     // Create LEFT render target
     LeftRenderTarget = NewObject<UTextureRenderTarget2D>(this, TEXT("LeftRenderTarget"));
     if (LeftRenderTarget)
     {
-      LeftRenderTarget->InitAutoFormat(SingleScreenWidth, SingleScreenHeight);
+      LeftRenderTarget->InitAutoFormat(TargetWidth, TargetHeight);
       LeftRenderTarget->RenderTargetFormat = RTF_RGBA8;
       LeftRenderTarget->UpdateResource();
       LeftSceneCapture->TextureTarget = LeftRenderTarget;
       UE_LOG(LogTemp, Log, TEXT("CarlaSpectatorPawn: Created LEFT render target %dx%d"), 
-        SingleScreenWidth, SingleScreenHeight);
+        TargetWidth, TargetHeight);
     }
 
     // Create RIGHT render target
     RightRenderTarget = NewObject<UTextureRenderTarget2D>(this, TEXT("RightRenderTarget"));
     if (RightRenderTarget)
     {
-      RightRenderTarget->InitAutoFormat(SingleScreenWidth, SingleScreenHeight);
+      RightRenderTarget->InitAutoFormat(TargetWidth, TargetHeight);
       RightRenderTarget->RenderTargetFormat = RTF_RGBA8;
       RightRenderTarget->UpdateResource();
       RightSceneCapture->TextureTarget = RightRenderTarget;
       UE_LOG(LogTemp, Log, TEXT("CarlaSpectatorPawn: Created RIGHT render target %dx%d"), 
-        SingleScreenWidth, SingleScreenHeight);
+        TargetWidth, TargetHeight);
     }
 
     if (LeftRenderTarget && RightRenderTarget)
@@ -205,8 +211,15 @@ void ACarlaSpectatorPawn::CreateTripleScreenWidget()
     .Alignment(FVector2D(0.0f, 0.0f))
     .AutoSize(false)
     [
-      SNew(SImage)
-      .Image(LeftBrush.Get())
+      // Use SBox with clipping to crop image instead of stretching
+      SNew(SBox)
+      .HAlign(HAlign_Center)
+      .VAlign(VAlign_Center)
+      .Clipping(EWidgetClipping::ClipToBounds)
+      [
+        SNew(SImage)
+        .Image(LeftBrush.Get())
+      ]
     ]
     
     // RIGHT image (66-100% horizontal using anchors)
@@ -216,8 +229,15 @@ void ACarlaSpectatorPawn::CreateTripleScreenWidget()
     .Alignment(FVector2D(0.0f, 0.0f))
     .AutoSize(false)
     [
-      SNew(SImage)
-      .Image(RightBrush.Get())
+      // Use SBox with clipping to crop image instead of stretching
+      SNew(SBox)
+      .HAlign(HAlign_Center)
+      .VAlign(VAlign_Center)
+      .Clipping(EWidgetClipping::ClipToBounds)
+      [
+        SNew(SImage)
+        .Image(RightBrush.Get())
+      ]
     ];
 
   ViewportClient->AddViewportWidgetContent(Canvas, 0);
