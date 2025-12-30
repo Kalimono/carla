@@ -16,17 +16,18 @@
 #include "CarlaSpectatorPawn.generated.h"
 
 /**
- * Custom Spectator Pawn with dual camera support.
+ * Custom Spectator Pawn with triple-screen camera support.
  * 
  * This class extends the standard Unreal Engine SpectatorPawn to support
- * two simultaneous camera views: one forward-facing and one backward-facing.
- * The views are displayed in a split-screen configuration (horizontal split).
+ * three simultaneous camera views for a triple-monitor setup (5760x1080):
+ * - Left screen: 90° left view (1920x1080)
+ * - Center screen: Forward view (1920x1080)
+ * - Right screen: 90° right view (1920x1080)
  * 
- * IMPLEMENTATION NOTE:
- * We use a UCameraComponent for the main forward view (standard Unreal rendering).
- * For the backward view, we use a USceneCaptureComponent2D that renders to a texture,
- * which is then displayed on screen using a UMG widget. This approach is simpler and
- * more reliable than trying to create multiple player controllers for split-screen.
+ * IMPLEMENTATION:
+ * We use a UCameraComponent for the center forward view (standard rendering).
+ * For the left and right views, we use USceneCaptureComponent2D components that 
+ * render to textures, which are then displayed on screen using a UMG widget.
  */
 UCLASS()
 class CARLA_API ACarlaSpectatorPawn : public ASpectatorPawn
@@ -49,6 +50,12 @@ protected:
   virtual void BeginPlay() override;
 
   /**
+   * Called when the actor is being destroyed or PIE ends.
+   * Resets initialization state for next PIE session.
+   */
+  virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+  /**
    * Called every frame.
    * Updates the backward camera to stay synchronized with the spectator.
    */
@@ -57,44 +64,64 @@ protected:
 public:
   
   /**
-   * Forward-facing camera component (main view).
+   * Forward-facing camera component (center screen - main view).
    * This is the standard camera that the player controller uses.
    */
   UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
   UCameraComponent* ForwardCamera;
 
   /**
-   * Backward-facing scene capture component.
-   * This captures the scene from the backward direction and renders it to a texture.
+   * Left-facing scene capture component (left screen - 90° left view).
+   * This captures the scene 90° to the left and renders it to a texture.
    */
   UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
-  USceneCaptureComponent2D* BackwardSceneCapture;
+  USceneCaptureComponent2D* LeftSceneCapture;
 
   /**
-   * Render target for the backward view.
-   * The BackwardSceneCapture renders to this texture, which is then displayed on screen.
+   * Right-facing scene capture component (right screen - 90° right view).
+   * This captures the scene 90° to the right and renders it to a texture.
    */
   UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
-  UTextureRenderTarget2D* BackwardRenderTarget;
+  USceneCaptureComponent2D* RightSceneCapture;
 
   /**
-   * The UMG widget class to use for displaying the split-screen view.
-   * Set this in Blueprint or C++ to reference your custom widget.
+   * Render target for the left view (1920x1080).
+   * The LeftSceneCapture renders to this texture.
    */
-  UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI")
-  TSubclassOf<UUserWidget> SplitScreenWidgetClass;
+  UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
+  UTextureRenderTarget2D* LeftRenderTarget;
 
   /**
-   * Instance of the split-screen widget currently displayed.
+   * Render target for the right view (1920x1080).
+   * The RightSceneCapture renders to this texture.
+   */
+  UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
+  UTextureRenderTarget2D* RightRenderTarget;
+
+  /**
+   * Instance of the triple-screen widget (created programmatically).
    */
   UPROPERTY()
-  UUserWidget* SplitScreenWidgetInstance;
+  UUserWidget* TripleScreenWidgetInstance;
 
 private:
   
   /**
-   * Creates and displays the split-screen UI widget.
-   * This widget shows both the main camera view and the backward render target.
+   * Creates and displays the triple-screen UI widget.
+   * This widget shows all three camera views side-by-side.
    */
-  void CreateSplitScreenWidget();
+  void CreateTripleScreenWidget();
+
+  /**
+   * Tracks whether initialization has been completed.
+   * Reset in EndPlay to allow re-initialization in subsequent PIE sessions.
+   */
+  bool bInitialized;
+
+  /**
+   * Slate brushes for left and right camera images.
+   * Must persist as member variables for Slate widget lifetime.
+   */
+  TSharedPtr<FSlateBrush> LeftBrush;
+  TSharedPtr<FSlateBrush> RightBrush;
 };

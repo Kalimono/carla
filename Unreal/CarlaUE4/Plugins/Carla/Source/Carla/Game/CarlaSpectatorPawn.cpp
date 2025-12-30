@@ -5,321 +5,221 @@
 // For a copy, see <https://opensource.org/licenses/MIT>.
 
 #include "CarlaSpectatorPawn.h"
+#include "Engine/LocalPlayer.h"
+#include "GameFramework/PlayerController.h"
 #include "Engine/World.h"
 #include "Kismet/GameplayStatics.h"
-#include "GameFramework/PlayerController.h"
-#include "Components/Image.h"
-#include "Components/CanvasPanel.h"
-#include "Components/CanvasPanelSlot.h"
-#include "Blueprint/WidgetBlueprintLibrary.h"
-#include "Materials/MaterialInstanceDynamic.h"
+#include "Engine/GameViewportClient.h"
+#include "Slate/SceneViewport.h"
+#include "Widgets/SCompoundWidget.h"
+#include "Widgets/Layout/SConstraintCanvas.h"
+#include "Widgets/Images/SImage.h"
+#include "Slate/SlateTextures.h"
+#include "Engine/Texture.h"
 
 /**
  * Constructor Implementation
- * 
- * Here we create and configure the camera components:
- * 1. ForwardCamera - a standard UCameraComponent for the main first-person view
- * 2. BackwardSceneCapture - a USceneCaptureComponent2D that captures the rear view
- * 
- * Why USceneCaptureComponent2D for the backward view?
- * - It renders the scene from its perspective to a texture (render target)
- * - This texture can be displayed anywhere on screen using a UI widget
- * - It's much simpler than trying to create multiple player controllers
- * - It's commonly used for rear-view mirrors, security cameras, etc. in games
  */
 ACarlaSpectatorPawn::ACarlaSpectatorPawn(const FObjectInitializer& ObjectInitializer)
   : Super(ObjectInitializer)
 {
-  // Enable ticking so we can update the backward camera each frame
   PrimaryActorTick.bCanEverTick = true;
+  bInitialized = false;
   
-  // Initialize widget pointers to null
-  SplitScreenWidgetClass = nullptr;
-  SplitScreenWidgetInstance = nullptr;
+  TripleScreenWidgetInstance = nullptr;
 
-  // Create the forward-facing camera component
-  // This is the "main" camera that the player sees through
+  // Create the forward-facing camera component (CENTER SCREEN)
   ForwardCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("ForwardCamera"));
-  
-  // Attach it to the root component so it moves with the spectator
   ForwardCamera->SetupAttachment(RootComponent);
-  
-  // Position it at the center of the spectator (no offset)
   ForwardCamera->SetRelativeLocation(FVector(0.0f, 0.0f, 0.0f));
-  
-  // No rotation needed - it faces forward by default
   ForwardCamera->SetRelativeRotation(FRotator(0.0f, 0.0f, 0.0f));
 
-  // Create the backward-facing scene capture component
-  // This will render the view behind the spectator to a texture
-  BackwardSceneCapture = CreateDefaultSubobject<USceneCaptureComponent2D>(TEXT("BackwardSceneCapture"));
-  
-  // Attach it to the root so it moves with the spectator
-  BackwardSceneCapture->SetupAttachment(RootComponent);
-  
-  // Position it at the same location as the forward camera
-  BackwardSceneCapture->SetRelativeLocation(FVector(0.0f, 0.0f, 0.0f));
-  
-  // Rotate it 180 degrees so it faces backward
-  // FRotator(Pitch, Yaw, Roll) - we only need to rotate the yaw (turning left/right)
-  BackwardSceneCapture->SetRelativeRotation(FRotator(0.0f, 180.0f, 0.0f));
+  // Create the left-facing scene capture component (LEFT SCREEN - 90° left)
+  LeftSceneCapture = CreateDefaultSubobject<USceneCaptureComponent2D>(TEXT("LeftSceneCapture"));
+  LeftSceneCapture->SetupAttachment(RootComponent);
+  LeftSceneCapture->SetRelativeLocation(FVector(0.0f, 0.0f, 0.0f));
+  LeftSceneCapture->SetRelativeRotation(FRotator(0.0f, -90.0f, 0.0f));
+  LeftSceneCapture->CaptureSource = SCS_FinalColorLDR;
+  LeftSceneCapture->bCaptureEveryFrame = true;
+  LeftSceneCapture->bCaptureOnMovement = true;
 
-  // Configure the scene capture settings
-  // These settings control how the backward view is rendered
-  
-  // CaptureSource determines what kind of image we capture
-  // SCS_FinalColorLDR = capture the final rendered color (what you normally see)
-  BackwardSceneCapture->CaptureSource = SCS_FinalColorLDR;
-  
-  // bCaptureEveryFrame = true means it updates every frame (like a live camera feed)
-  // If this were false, we'd have to manually trigger captures
-  BackwardSceneCapture->bCaptureEveryFrame = true;
-  
-  // bCaptureOnMovement = true means it updates when the component moves
-  // This ensures we get smooth updates as the spectator moves around
-  BackwardSceneCapture->bCaptureOnMovement = true;
+  // Create the right-facing scene capture component (RIGHT SCREEN - 90° right)
+  RightSceneCapture = CreateDefaultSubobject<USceneCaptureComponent2D>(TEXT("RightSceneCapture"));
+  RightSceneCapture->SetupAttachment(RootComponent);
+  RightSceneCapture->SetRelativeLocation(FVector(0.0f, 0.0f, 0.0f));
+  RightSceneCapture->SetRelativeRotation(FRotator(0.0f, 90.0f, 0.0f));
+  RightSceneCapture->CaptureSource = SCS_FinalColorLDR;
+  RightSceneCapture->bCaptureEveryFrame = true;
+  RightSceneCapture->bCaptureOnMovement = true;
 
-  // We'll create the render target in BeginPlay since it needs to know the screen resolution
-  BackwardRenderTarget = nullptr;
+  LeftRenderTarget = nullptr;
+  RightRenderTarget = nullptr;
 }
 
 /**
  * BeginPlay Implementation
- * 
- * Called when the actor enters gameplay (after the world is loaded).
- * This is where we:
- * 1. Create the render target (texture) for the backward view
- * 2. Assign it to the scene capture component
- * 3. Set up the split-screen UI widget to display both views
  */
 void ACarlaSpectatorPawn::BeginPlay()
 {
   Super::BeginPlay();
+  UE_LOG(LogTemp, Log, TEXT("CarlaSpectatorPawn: BeginPlay called, will initialize on first tick"));
+}
 
-  // Create a render target (texture) for the backward scene capture to draw to
-  // This is essentially a "canvas" that the scene capture will paint on each frame
+/**
+ * EndPlay Implementation
+ */
+void ACarlaSpectatorPawn::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+  Super::EndPlay(EndPlayReason);
   
-  // Get the viewport size to determine the render target resolution
-  // We want it to match the screen resolution for best quality
-  UWorld* World = GetWorld();
-  if (!World)
-  {
-    UE_LOG(LogTemp, Error, TEXT("CarlaSpectatorPawn: World is null"));
-    return;
-  }
-
-  APlayerController* PC = UGameplayStatics::GetPlayerController(World, 0);
-  if (!PC)
-  {
-    UE_LOG(LogTemp, Error, TEXT("CarlaSpectatorPawn: PlayerController is null"));
-    return;
-  }
-
-  // Get the viewport size (screen resolution)
-  int32 ViewportWidth, ViewportHeight;
-  PC->GetViewportSize(ViewportWidth, ViewportHeight);
-
-  // Create the render target texture
-  // NewObject creates a new Unreal object at runtime
-  // Parameters: Outer (owner), Class, Name
-  BackwardRenderTarget = NewObject<UTextureRenderTarget2D>(this, TEXT("BackwardRenderTarget"));
+  // Reset initialization state for next PIE session
+  bInitialized = false;
+  LeftRenderTarget = nullptr;
+  RightRenderTarget = nullptr;
   
-  if (BackwardRenderTarget)
-  {
-    // Initialize the render target with the viewport dimensions
-    // We use full resolution for best quality
-    // RTF_RGBA8 means 8 bits per color channel (standard color format)
-    BackwardRenderTarget->InitAutoFormat(ViewportWidth, ViewportHeight);
-    
-    // Set the render target format
-    // PF_B8G8R8A8 is a standard color format (Blue, Green, Red, Alpha - 8 bits each)
-    BackwardRenderTarget->RenderTargetFormat = RTF_RGBA8;
-    
-    // Update the resource so it's ready to be used
-    BackwardRenderTarget->UpdateResource();
-
-    // Assign this render target to the scene capture component
-    // Now when the scene capture renders, it will draw to this texture
-    BackwardSceneCapture->TextureTarget = BackwardRenderTarget;
-
-    UE_LOG(LogTemp, Log, TEXT("CarlaSpectatorPawn: Created render target %dx%d"), ViewportWidth, ViewportHeight);
-  }
-  else
-  {
-    UE_LOG(LogTemp, Error, TEXT("CarlaSpectatorPawn: Failed to create render target"));
-    return;
-  }
-
-  // Set up the split-screen UI
-  // This will create a widget that displays both camera views
-  CreateSplitScreenWidget();
+  // Clear brush references
+  LeftBrush.Reset();
+  RightBrush.Reset();
+  
+  // Note: Slate widgets are automatically cleaned up by the viewport
+  TripleScreenWidgetInstance = nullptr;
+  
+  UE_LOG(LogTemp, Log, TEXT("CarlaSpectatorPawn: EndPlay - reset state for next session"));
 }
 
 /**
  * Tick Implementation
- * 
- * Called every frame. The scene capture automatically updates because we set
- * bCaptureEveryFrame = true. We also handle deferred initialization here to
- * ensure all systems are ready.
  */
 void ACarlaSpectatorPawn::Tick(float DeltaTime)
 {
   Super::Tick(DeltaTime);
   
-  // Initialize render target and widget on first tick if not already done
-  // This ensures PlayerController and viewport are available
-  static bool bInitialized = false;
-  if (!bInitialized && BackwardRenderTarget == nullptr)
+  if (!bInitialized && LeftRenderTarget == nullptr)
   {
     UWorld* World = GetWorld();
-    if (!World)
-    {
-      return;
-    }
+    if (!World) return;
 
     APlayerController* PC = UGameplayStatics::GetPlayerController(World, 0);
-    if (!PC)
-    {
-      return;
-    }
+    if (!PC) return;
 
-    // Get the viewport size (screen resolution)
     int32 ViewportWidth, ViewportHeight;
     PC->GetViewportSize(ViewportWidth, ViewportHeight);
 
-    if (ViewportWidth > 0 && ViewportHeight > 0)
+    if (ViewportWidth <= 0 || ViewportHeight <= 0)
     {
-      // Create the render target texture
-      BackwardRenderTarget = NewObject<UTextureRenderTarget2D>(this, TEXT("BackwardRenderTarget"));
-      
-      if (BackwardRenderTarget)
-      {
-        // Initialize the render target with the viewport dimensions
-        BackwardRenderTarget->InitAutoFormat(ViewportWidth, ViewportHeight);
-        BackwardRenderTarget->RenderTargetFormat = RTF_RGBA8;
-        BackwardRenderTarget->UpdateResource();
+      UE_LOG(LogTemp, Warning, TEXT("CarlaSpectatorPawn: Viewport not ready yet (%dx%d)"), 
+        ViewportWidth, ViewportHeight);
+      return;
+    }
 
-        // Assign this render target to the scene capture component
-        BackwardSceneCapture->TextureTarget = BackwardRenderTarget;
-        
-        // Activate the scene capture component so it starts rendering
-        BackwardSceneCapture->SetActive(true);
+    const int32 SingleScreenWidth = ViewportWidth / 3;
+    const int32 SingleScreenHeight = ViewportHeight;
 
-        UE_LOG(LogTemp, Log, TEXT("CarlaSpectatorPawn: Created render target %dx%d and activated scene capture"), ViewportWidth, ViewportHeight);
-        
-        // Set up the split-screen UI
-        CreateSplitScreenWidget();
-        
-        bInitialized = true;
-      }
+    if (SingleScreenWidth <= 0 || SingleScreenHeight <= 0)
+    {
+      UE_LOG(LogTemp, Error, TEXT("CarlaSpectatorPawn: Invalid dimensions: %dx%d"), 
+        SingleScreenWidth, SingleScreenHeight);
+      return;
+    }
+
+    UE_LOG(LogTemp, Log, TEXT("CarlaSpectatorPawn: Viewport %dx%d, each camera %dx%d"), 
+      ViewportWidth, ViewportHeight, SingleScreenWidth, SingleScreenHeight);
+
+    // Create LEFT render target
+    LeftRenderTarget = NewObject<UTextureRenderTarget2D>(this, TEXT("LeftRenderTarget"));
+    if (LeftRenderTarget)
+    {
+      LeftRenderTarget->InitAutoFormat(SingleScreenWidth, SingleScreenHeight);
+      LeftRenderTarget->RenderTargetFormat = RTF_RGBA8;
+      LeftRenderTarget->UpdateResource();
+      LeftSceneCapture->TextureTarget = LeftRenderTarget;
+      UE_LOG(LogTemp, Log, TEXT("CarlaSpectatorPawn: Created LEFT render target %dx%d"), 
+        SingleScreenWidth, SingleScreenHeight);
+    }
+
+    // Create RIGHT render target
+    RightRenderTarget = NewObject<UTextureRenderTarget2D>(this, TEXT("RightRenderTarget"));
+    if (RightRenderTarget)
+    {
+      RightRenderTarget->InitAutoFormat(SingleScreenWidth, SingleScreenHeight);
+      RightRenderTarget->RenderTargetFormat = RTF_RGBA8;
+      RightRenderTarget->UpdateResource();
+      RightSceneCapture->TextureTarget = RightRenderTarget;
+      UE_LOG(LogTemp, Log, TEXT("CarlaSpectatorPawn: Created RIGHT render target %dx%d"), 
+        SingleScreenWidth, SingleScreenHeight);
+    }
+
+    if (LeftRenderTarget && RightRenderTarget)
+    {
+      CreateTripleScreenWidget();
+      bInitialized = true;
+      UE_LOG(LogTemp, Log, TEXT("CarlaSpectatorPawn: Initialization complete!"));
     }
   }
-  
-  // The scene capture automatically updates each frame, so we don't need to do anything here
-  // Both cameras are attached to RootComponent, so they automatically follow the spectator's movement
-  
-  // If we wanted to manually control when the backward view updates, we would call:
-  // BackwardSceneCapture->CaptureScene();
 }
 
 /**
- * CreateSplitScreenWidget Implementation
- * 
- * This function creates and displays a UMG widget that shows the backward camera view.
- * The widget blueprint should contain an Image widget that we'll configure to display
- * the BackwardRenderTarget texture.
- * 
- * Steps:
- * 1. Check if a widget class is assigned (either in Blueprint or by loading a path)
- * 2. Create an instance of the widget
- * 3. Find the Image widget inside it (by name)
- * 4. Set the Image's brush to display our BackwardRenderTarget
- * 5. Add the widget to the viewport so it's visible on screen
+ * CreateTripleScreenWidget Implementation
  */
-void ACarlaSpectatorPawn::CreateSplitScreenWidget()
+void ACarlaSpectatorPawn::CreateTripleScreenWidget()
 {
   UWorld* World = GetWorld();
-  if (!World)
-  {
-    UE_LOG(LogTemp, Error, TEXT("CarlaSpectatorPawn: World is null in CreateSplitScreenWidget"));
-    return;
-  }
+  if (!World) return;
 
   APlayerController* PC = UGameplayStatics::GetPlayerController(World, 0);
-  if (!PC)
+  if (!PC) return;
+
+  UGameViewportClient* ViewportClient = World->GetGameViewport();
+  if (!ViewportClient) return;
+
+  int32 ViewportWidth, ViewportHeight;
+  PC->GetViewportSize(ViewportWidth, ViewportHeight);
+
+  // Create LEFT brush (stored as member variable)
+  LeftBrush = MakeShared<FSlateBrush>();
+  if (LeftRenderTarget)
   {
-    UE_LOG(LogTemp, Error, TEXT("CarlaSpectatorPawn: PlayerController is null in CreateSplitScreenWidget"));
-    return;
+    LeftBrush->SetResourceObject(LeftRenderTarget);
+    LeftBrush->ImageSize = FVector2D(LeftRenderTarget->SizeX, LeftRenderTarget->SizeY);
+    LeftBrush->DrawAs = ESlateBrushDrawType::Image;
+    UE_LOG(LogTemp, Log, TEXT("CarlaSpectatorPawn: Created LEFT brush"));
   }
 
-  // If no widget class is set in Blueprint, try to load a default one
-  // You should replace this path with the actual path to your widget blueprint
-  // Format: "/Game/FolderName/WidgetName.WidgetName_C"
-  // The "_C" suffix is important - it indicates the compiled Blueprint class
-  if (!SplitScreenWidgetClass)
+  // Create RIGHT brush (stored as member variable)  
+  RightBrush = MakeShared<FSlateBrush>();
+  if (RightRenderTarget)
   {
-    // Try to load a widget from a default path
-    // IMPORTANT: Update this path to match your widget's location!
-    FString WidgetPath = TEXT("/Game/Carla/Blueprints/UI/SplitScreenWidget.SplitScreenWidget_C");
-    
-    SplitScreenWidgetClass = LoadClass<UUserWidget>(nullptr, *WidgetPath);
-    
-    if (!SplitScreenWidgetClass)
-    {
-      UE_LOG(LogTemp, Warning, TEXT("CarlaSpectatorPawn: Could not load widget from path: %s"), *WidgetPath);
-      UE_LOG(LogTemp, Warning, TEXT("Please set the SplitScreenWidgetClass in the Blueprint or update the path in code."));
-      UE_LOG(LogTemp, Log, TEXT("Backward camera is still active and rendering to the render target."));
-      return;
-    }
+    RightBrush->SetResourceObject(RightRenderTarget);
+    RightBrush->ImageSize = FVector2D(RightRenderTarget->SizeX, RightRenderTarget->SizeY);
+    RightBrush->DrawAs = ESlateBrushDrawType::Image;
+    UE_LOG(LogTemp, Log, TEXT("CarlaSpectatorPawn: Created RIGHT brush"));
   }
 
-  // Create an instance of the widget
-  SplitScreenWidgetInstance = CreateWidget<UUserWidget>(PC, SplitScreenWidgetClass);
-  
-  if (!SplitScreenWidgetInstance)
-  {
-    UE_LOG(LogTemp, Error, TEXT("CarlaSpectatorPawn: Failed to create widget instance"));
-    return;
-  }
+  // Create Slate constraint canvas with anchor-based positioning (scales dynamically)
+  TSharedRef<SConstraintCanvas> Canvas = SNew(SConstraintCanvas)
+    
+    // LEFT image (0-33% horizontal using anchors)
+    + SConstraintCanvas::Slot()
+    .Anchors(FAnchors(0.0f, 0.0f, 0.33f, 1.0f))  // Left third, full height
+    .Offset(FMargin(0.0f, 0.0f, 0.0f, 0.0f))     // No offset, fill anchor area
+    .Alignment(FVector2D(0.0f, 0.0f))
+    .AutoSize(false)
+    [
+      SNew(SImage)
+      .Image(LeftBrush.Get())
+    ]
+    
+    // RIGHT image (66-100% horizontal using anchors)
+    + SConstraintCanvas::Slot()
+    .Anchors(FAnchors(0.66f, 0.0f, 1.0f, 1.0f))  // Right third, full height
+    .Offset(FMargin(0.0f, 0.0f, 0.0f, 0.0f))     // No offset, fill anchor area
+    .Alignment(FVector2D(0.0f, 0.0f))
+    .AutoSize(false)
+    [
+      SNew(SImage)
+      .Image(RightBrush.Get())
+    ];
 
-  UE_LOG(LogTemp, Log, TEXT("CarlaSpectatorPawn: Successfully created widget instance"));
-
-  // Find the Image widget inside our UMG widget by name
-  // The Image widget in your Blueprint should be named "BackwardCameraImage" or similar
-  // You can change this name to match what you used in your widget blueprint
-  UImage* BackwardImage = Cast<UImage>(SplitScreenWidgetInstance->GetWidgetFromName(TEXT("BackwardCameraImage")));
-  
-  if (BackwardImage && BackwardRenderTarget)
-  {
-    // Create a brush that uses our render target texture
-    FSlateBrush Brush;
-    Brush.SetResourceObject(BackwardRenderTarget);
-    
-    // Set the image size to match the render target
-    Brush.ImageSize = FVector2D(BackwardRenderTarget->SizeX, BackwardRenderTarget->SizeY);
-    
-    // Apply the brush to the Image widget
-    BackwardImage->SetBrush(Brush);
-    
-    UE_LOG(LogTemp, Log, TEXT("CarlaSpectatorPawn: Successfully set render target to Image widget"));
-  }
-  else
-  {
-    if (!BackwardImage)
-    {
-      UE_LOG(LogTemp, Warning, TEXT("CarlaSpectatorPawn: Could not find Image widget named 'BackwardCameraImage' in the widget."));
-      UE_LOG(LogTemp, Warning, TEXT("Make sure your widget blueprint has an Image widget with this exact name."));
-    }
-    
-    if (!BackwardRenderTarget)
-    {
-      UE_LOG(LogTemp, Error, TEXT("CarlaSpectatorPawn: BackwardRenderTarget is null!"));
-    }
-  }
-
-  // Add the widget to the viewport so it's visible on screen
-  // ZOrder 0 means it will be at the back (other UI elements can be on top)
-  SplitScreenWidgetInstance->AddToViewport(0);
-  
-  UE_LOG(LogTemp, Log, TEXT("CarlaSpectatorPawn: Split-screen widget added to viewport successfully!"));
+  ViewportClient->AddViewportWidgetContent(Canvas, 0);
+  UE_LOG(LogTemp, Log, TEXT("CarlaSpectatorPawn: Constraint canvas with anchors added to viewport"));
 }
