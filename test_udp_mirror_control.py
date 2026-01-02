@@ -26,7 +26,7 @@ try:
     
     while True:
         # Calculate offset (0.0 to 1.0)
-        progress = step / 100.0
+        progress = step
         
         # Create message in format: "left:X,right:Y"
         # Both mirrors move together in this example
@@ -34,7 +34,7 @@ try:
         
         # Send UDP packet
         sock.sendto(message.encode(), (UDP_IP, UDP_PORT))
-        print(f"\rSent: {message}", end="", flush=True)
+        print(f"\rSent: {message}")
         
         # Update step
         step += direction
