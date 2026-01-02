@@ -18,6 +18,167 @@
 #include "Widgets/Images/SImage.h"
 #include "Slate/SlateTextures.h"
 #include "Engine/Texture.h"
+#include "Sockets.h"
+#include "SocketSubsystem.h"
+#include "IPAddress.h"
+#include "HAL/RunnableThread.h"
+
+// =====================================================
+// FUdpMirrorReceiver - Async UDP Receiver Implementation
+// =====================================================
+
+FUdpMirrorReceiver::FUdpMirrorReceiver(int32 Port)
+  : Socket(nullptr)
+  , Thread(nullptr)
+  , bShouldRun(false)
+  , ListenPort(Port)
+  , LeftOffset(0.5f)
+  , RightOffset(0.5f)
+{
+}
+
+FUdpMirrorReceiver::~FUdpMirrorReceiver()
+{
+  Stop();
+  if (Thread)
+  {
+    Thread->WaitForCompletion();
+    delete Thread;
+    Thread = nullptr;
+  }
+}
+
+bool FUdpMirrorReceiver::Init()
+{
+  ISocketSubsystem* SocketSubsystem = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM);
+  if (!SocketSubsystem)
+  {
+    UE_LOG(LogTemp, Error, TEXT("FUdpMirrorReceiver: Failed to get socket subsystem"));
+    return false;
+  }
+  
+  // Create UDP socket
+  Socket = SocketSubsystem->CreateSocket(NAME_DGram, TEXT("UdpMirrorReceiver"), false);
+  if (!Socket)
+  {
+    UE_LOG(LogTemp, Error, TEXT("FUdpMirrorReceiver: Failed to create UDP socket"));
+    return false;
+  }
+  
+  // Set socket to non-blocking
+  Socket->SetNonBlocking(false);  // Blocking for thread
+  Socket->SetRecvErr(false);
+  
+  // Bind to port
+  TSharedRef<FInternetAddr> LocalAddr = SocketSubsystem->CreateInternetAddr();
+  LocalAddr->SetAnyAddress();
+  LocalAddr->SetPort(ListenPort);
+  
+  if (!Socket->Bind(*LocalAddr))
+  {
+    UE_LOG(LogTemp, Error, TEXT("FUdpMirrorReceiver: Failed to bind UDP socket to port %d"), ListenPort);
+    SocketSubsystem->DestroySocket(Socket);
+    Socket = nullptr;
+    return false;
+  }
+  
+  // Set receive buffer size
+  int32 NewSize = 0;
+  Socket->SetReceiveBufferSize(2048, NewSize);
+  
+  bShouldRun = true;
+  UE_LOG(LogTemp, Log, TEXT("FUdpMirrorReceiver: UDP socket bound to port %d"), ListenPort);
+  return true;
+}
+
+uint32 FUdpMirrorReceiver::Run()
+{
+  TArray<uint8> ReceivedData;
+  ReceivedData.SetNumUninitialized(1024);
+  
+  while (bShouldRun)
+  {
+    int32 BytesRead = 0;
+    
+    // Blocking receive with timeout
+    if (Socket && Socket->Wait(ESocketWaitConditions::WaitForRead, FTimespan::FromMilliseconds(100)))
+    {
+      if (Socket->Recv(ReceivedData.GetData(), ReceivedData.Num(), BytesRead))
+      {
+        if (BytesRead > 0)
+        {
+          // Convert to string and parse
+          FString ReceivedString = FString(BytesRead, (const char*)ReceivedData.GetData());
+          
+          // Expected format: "left:0.5,right:0.3"
+          TArray<FString> Parts;
+          ReceivedString.ParseIntoArray(Parts, TEXT(","));
+          
+          float NewLeft = LeftOffset;
+          float NewRight = RightOffset;
+          
+          for (const FString& Part : Parts)
+          {
+            TArray<FString> KeyValue;
+            Part.ParseIntoArray(KeyValue, TEXT(":"));
+            
+            if (KeyValue.Num() == 2)
+            {
+              FString Key = KeyValue[0].TrimStartAndEnd();
+              float Value = FCString::Atof(*KeyValue[1].TrimStartAndEnd());
+              Value = FMath::Clamp(Value, 0.0f, 1.0f);
+              
+              if (Key.Equals(TEXT("left"), ESearchCase::IgnoreCase))
+              {
+                NewLeft = Value;
+              }
+              else if (Key.Equals(TEXT("right"), ESearchCase::IgnoreCase))
+              {
+                NewRight = Value;
+              }
+            }
+          }
+          
+          // Thread-safe update
+          {
+            FScopeLock Lock(&DataLock);
+            LeftOffset = NewLeft;
+            RightOffset = NewRight;
+          }
+        }
+      }
+    }
+  }
+  
+  return 0;
+}
+
+void FUdpMirrorReceiver::Stop()
+{
+  bShouldRun = false;
+}
+
+void FUdpMirrorReceiver::Exit()
+{
+  if (Socket)
+  {
+    Socket->Close();
+    ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM)->DestroySocket(Socket);
+    Socket = nullptr;
+  }
+  UE_LOG(LogTemp, Log, TEXT("FUdpMirrorReceiver: Thread exiting"));
+}
+
+void FUdpMirrorReceiver::GetMirrorOffsets(float& OutLeft, float& OutRight)
+{
+  FScopeLock Lock(&DataLock);
+  OutLeft = LeftOffset;
+  OutRight = RightOffset;
+}
+
+// =====================================================
+// ACarlaSpectatorPawn Implementation
+// =====================================================
 
 /**
  * Constructor Implementation
@@ -29,6 +190,8 @@ ACarlaSpectatorPawn::ACarlaSpectatorPawn(const FObjectInitializer& ObjectInitial
   bInitialized = false;
   
   TripleScreenWidgetInstance = nullptr;
+  UdpReceiverThread = nullptr;
+  UdpUpdateTimer = 0.0f;
 
   // Create the forward-facing camera component (CENTER SCREEN)
   ForwardCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("ForwardCamera"));
@@ -76,6 +239,9 @@ ACarlaSpectatorPawn::ACarlaSpectatorPawn(const FObjectInitializer& ObjectInitial
   RightRenderTarget = nullptr;
   LeftRearRenderTarget = nullptr;
   RightRearRenderTarget = nullptr;
+
+  // Initialize UDP receiver
+  UdpUpdateTimer = 0.0f;
 }
 
 /**
@@ -85,6 +251,9 @@ void ACarlaSpectatorPawn::BeginPlay()
 {
   Super::BeginPlay();
   UE_LOG(LogTemp, Log, TEXT("CarlaSpectatorPawn: BeginPlay called, will initialize on first tick"));
+  
+  // Start asynchronous UDP receiver
+  StartUdpReceiver();
 }
 
 /**
@@ -93,6 +262,9 @@ void ACarlaSpectatorPawn::BeginPlay()
 void ACarlaSpectatorPawn::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
   Super::EndPlay(EndPlayReason);
+  
+  // Stop UDP receiver
+  StopUdpReceiver();
   
   // Reset initialization state for next PIE session
   bInitialized = false;
@@ -119,6 +291,14 @@ void ACarlaSpectatorPawn::EndPlay(const EEndPlayReason::Type EndPlayReason)
 void ACarlaSpectatorPawn::Tick(float DeltaTime)
 {
   Super::Tick(DeltaTime);
+  
+  // Update mirror offsets from UDP thread at 50Hz (every 0.02 seconds)
+  UdpUpdateTimer += DeltaTime;
+  if (UdpUpdateTimer >= 0.02f)
+  {
+    UdpUpdateTimer = 0.0f;
+    UpdateMirrorOffsetsFromUdp();
+  }
   
   if (!bInitialized && LeftRenderTarget == nullptr)
   {
@@ -186,7 +366,7 @@ void ACarlaSpectatorPawn::Tick(float DeltaTime)
     const int32 RearTargetHeight = 1080; // Full height
 
     // Create LEFT REAR render target
-    LeftRearRenderTarget = NewObject<UTextureRenderTarget2D>(this, TEXT("LeftRearRenderTarget"));
+    LeftRearRenderTarget = NewObject<UTextureRenderTarget2D>();
     if (LeftRearRenderTarget)
     {
       LeftRearRenderTarget->InitAutoFormat(RearTargetWidth, RearTargetHeight);
@@ -198,7 +378,7 @@ void ACarlaSpectatorPawn::Tick(float DeltaTime)
     }
 
     // Create RIGHT REAR render target
-    RightRearRenderTarget = NewObject<UTextureRenderTarget2D>(this, TEXT("RightRearRenderTarget"));
+    RightRearRenderTarget = NewObject<UTextureRenderTarget2D>();
     if (RightRearRenderTarget)
     {
       RightRearRenderTarget->InitAutoFormat(RearTargetWidth, RearTargetHeight);
@@ -371,3 +551,85 @@ void ACarlaSpectatorPawn::CreateTripleScreenWidget()
   ViewportClient->AddViewportWidgetContent(Canvas, 0);
   UE_LOG(LogTemp, Log, TEXT("CarlaSpectatorPawn: Constraint canvas with anchors added to viewport"));
 }
+
+/**
+ * StartUdpReceiver Implementation
+ */
+void ACarlaSpectatorPawn::StartUdpReceiver()
+{
+  // Create and initialize UDP receiver
+  UdpReceiver = MakeUnique<FUdpMirrorReceiver>(UdpPort);
+  
+  if (UdpReceiver->Init())
+  {
+    // Create and start the receiver thread
+    UdpReceiverThread = FRunnableThread::Create(UdpReceiver.Get(), TEXT("UdpMirrorReceiverThread"), 0, TPri_Normal);
+    UE_LOG(LogTemp, Log, TEXT("CarlaSpectatorPawn: UDP receiver thread started on port %d"), UdpPort);
+  }
+  else
+  {
+    UE_LOG(LogTemp, Error, TEXT("CarlaSpectatorPawn: Failed to initialize UDP receiver"));
+    UdpReceiver.Reset();
+  }
+}
+
+/**
+ * StopUdpReceiver Implementation
+ */
+void ACarlaSpectatorPawn::StopUdpReceiver()
+{
+  if (UdpReceiver.IsValid())
+  {
+    // Signal the thread to stop
+    UdpReceiver->Stop();
+    
+    // Wait for thread to finish if it exists
+    if (UdpReceiverThread)
+    {
+      UdpReceiverThread->WaitForCompletion();
+      delete UdpReceiverThread;
+      UdpReceiverThread = nullptr;
+    }
+    
+    // Cleanup receiver
+    UdpReceiver.Reset();
+    UE_LOG(LogTemp, Log, TEXT("CarlaSpectatorPawn: UDP receiver stopped"));
+  }
+}
+
+/**
+ * UpdateMirrorOffsetsFromUdp Implementation
+ */
+void ACarlaSpectatorPawn::UpdateMirrorOffsetsFromUdp()
+{
+  if (UdpReceiver.IsValid())
+  {
+    // Get thread-safe mirror offsets
+    float NewLeftOffset, NewRightOffset;
+    UdpReceiver->GetMirrorOffsets(NewLeftOffset, NewRightOffset);
+    
+    // Update member variables
+    LeftMirrorCropOffset = NewLeftOffset;
+    RightMirrorCropOffset = NewRightOffset;
+    
+    // Update brush UV regions if they exist
+    if (LeftRearBrush.IsValid() && LeftRearRenderTarget)
+    {
+      float MirrorWidthRatio = 200.0f / LeftRearRenderTarget->SizeX;
+      LeftRearBrush->SetUVRegion(FBox2D(
+        FVector2D(LeftMirrorCropOffset - MirrorWidthRatio * 0.5f, 0.0f),
+        FVector2D(LeftMirrorCropOffset + MirrorWidthRatio * 0.5f, 1.0f)
+      ));
+    }
+    
+    if (RightRearBrush.IsValid() && RightRearRenderTarget)
+    {
+      float MirrorWidthRatio = 200.0f / RightRearRenderTarget->SizeX;
+      RightRearBrush->SetUVRegion(FBox2D(
+        FVector2D(RightMirrorCropOffset - MirrorWidthRatio * 0.5f, 0.0f),
+        FVector2D(RightMirrorCropOffset + MirrorWidthRatio * 0.5f, 1.0f)
+      ));
+    }
+  }
+}
+

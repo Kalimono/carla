@@ -86,7 +86,9 @@ public class Carla : ModuleRules
         "Projects",
         "UMG",
         "Slate",
-        "SlateCore"
+        "SlateCore",
+        "Sockets",
+        "Networking"
         // ... add other public dependencies that you statically link with here ...
       }
       );

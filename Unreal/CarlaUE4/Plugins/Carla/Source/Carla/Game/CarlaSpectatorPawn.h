@@ -13,7 +13,43 @@
 #include "Engine/TextureRenderTarget2D.h"
 #include "Components/SceneCaptureComponent2D.h"
 #include "Blueprint/UserWidget.h"
+#include "HAL/Runnable.h"
+#include "HAL/ThreadSafeBool.h"
 #include "CarlaSpectatorPawn.generated.h"
+
+// Forward declarations
+class FSocket;
+class FRunnableThread;
+
+/**
+ * Asynchronous UDP receiver that runs on a separate thread.
+ */
+class FUdpMirrorReceiver : public FRunnable
+{
+public:
+  FUdpMirrorReceiver(int32 Port);
+  virtual ~FUdpMirrorReceiver();
+
+  // FRunnable interface
+  virtual bool Init() override;
+  virtual uint32 Run() override;
+  virtual void Stop() override;
+  virtual void Exit() override;
+
+  // Thread-safe getters for mirror offsets
+  void GetMirrorOffsets(float& OutLeft, float& OutRight);
+
+private:
+  FSocket* Socket;
+  FRunnableThread* Thread;
+  FThreadSafeBool bShouldRun;
+  int32 ListenPort;
+
+  // Thread-safe storage for mirror offsets
+  FCriticalSection DataLock;
+  float LeftOffset;
+  float RightOffset;
+};
 
 /**
  * Custom Spectator Pawn with triple-screen camera support.
@@ -173,4 +209,39 @@ private:
    */
   TSharedPtr<FSlateBrush> LeftRearBrush;
   TSharedPtr<FSlateBrush> RightRearBrush;
+
+  /**
+   * Asynchronous UDP receiver for mirror crop offset updates.
+   */
+  TUniquePtr<FUdpMirrorReceiver> UdpReceiver;
+
+  /**
+   * UDP receiver thread.
+   */
+  FRunnableThread* UdpReceiverThread;
+
+  /**
+   * Time accumulator for checking UDP updates (every 0.02 seconds = 50Hz).
+   */
+  float UdpUpdateTimer;
+
+  /**
+   * UDP port to listen on for mirror offset updates.
+   */
+  int32 UdpPort = 8888;
+
+  /**
+   * Starts the asynchronous UDP receiver.
+   */
+  void StartUdpReceiver();
+
+  /**
+   * Stops the asynchronous UDP receiver.
+   */
+  void StopUdpReceiver();
+
+  /**
+   * Updates mirror offsets from UDP data.
+   */
+  void UpdateMirrorOffsetsFromUdp();
 };
