@@ -344,28 +344,31 @@ void UCarlaEpisode::InitializeAtBeginPlay()
   
   // Destroy the default spectator pawn if it exists
   APawn* DefaultSpectator = PlayerController->GetPawn();
-  if (DefaultSpectator != nullptr)
-  {
-    DefaultSpectator->Destroy();
-  }
-  
-  // Spawn our custom dual-camera spectator pawn
-  FActorSpawnParameters SpawnParams;
-  SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-  
-  // Get the default spawn location (or use a default location if none exists)
-  FVector SpawnLocation = FVector(0.0f, 0.0f, 200.0f); // 200 units above ground
+  FVector SpawnLocation = FVector(0.0f, 0.0f, 200.0f);
   FRotator SpawnRotation = FRotator::ZeroRotator;
   
   if (DefaultSpectator != nullptr)
   {
     SpawnLocation = DefaultSpectator->GetActorLocation();
     SpawnRotation = DefaultSpectator->GetActorRotation();
+    DefaultSpectator->Destroy();
   }
   
-  // Spawn the custom spectator pawn
+  // Spawn our custom spectator pawn
+  FActorSpawnParameters SpawnParams;
+  SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+  
+  // Check if the class is valid before spawning
+  UClass* SpectatorClass = ACarlaSpectatorPawn::StaticClass();
+  if (SpectatorClass == nullptr)
+  {
+    UE_LOG(LogCarla, Error, TEXT("ACarlaSpectatorPawn class is null! Using default spectator."));
+    Spectator = PlayerController->GetPawn();
+    return;
+  }
+  
   Spectator = World->SpawnActor<ACarlaSpectatorPawn>(
-    ACarlaSpectatorPawn::StaticClass(),
+    SpectatorClass,
     SpawnLocation,
     SpawnRotation,
     SpawnParams
@@ -382,7 +385,7 @@ void UCarlaEpisode::InitializeAtBeginPlay()
     Description.Class = Spectator->GetClass();
     ActorDispatcher->RegisterActor(*Spectator, Description);
     
-    UE_LOG(LogCarla, Log, TEXT("Custom dual-camera spectator pawn spawned successfully"));
+    UE_LOG(LogCarla, Log, TEXT("Custom spectator pawn spawned successfully"));
   }
   else
   {

@@ -47,6 +47,7 @@ private:
 
   // Thread-safe storage for mirror offsets
   FCriticalSection DataLock;
+  FCriticalSection SocketLock;  // Protect socket access
   float LeftOffset;
   float RightOffset;
 };

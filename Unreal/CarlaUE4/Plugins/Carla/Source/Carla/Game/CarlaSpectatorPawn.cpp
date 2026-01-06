@@ -26,9 +26,7 @@
 
 // Global flags to prevent multiple instances across PIE
 static bool GUdpReceiverActive = false;
-static bool GSpectatorInitialized = false;
 static FCriticalSection GUdpReceiverLock;
-static FCriticalSection GSpectatorLock;
 
 // =====================================================
 // FUdpMirrorReceiver - Async UDP Receiver Implementation
@@ -106,92 +104,89 @@ uint32 FUdpMirrorReceiver::Run()
   
   while (bShouldRun)
   {
-    // Check if socket is still valid before using it
-    if (!Socket)
-    {
-      break;
-    }
-    
-    int32 BytesRead = 0;
-    
-    // Blocking receive with timeout - may fail if socket is closed during Stop()
-    // Check bShouldRun first to avoid accessing potentially closed socket
+    // Check if we should stop before each operation
     if (!bShouldRun)
     {
       break;
     }
     
+    int32 BytesRead = 0;
     bool bHasData = false;
-    // Socket can be closed by Stop() at any time, so we just check bShouldRun
-    // and let Wait() fail gracefully if socket is closed
-    if (Socket)
-    {
-      bHasData = Socket->Wait(ESocketWaitConditions::WaitForRead, FTimespan::FromMilliseconds(100));
-    }
-    else
-    {
-      break;
-    }
     
-    if (bHasData)
+    // Check for data with a short timeout to allow quick exit on Stop()
     {
-      // Double-check socket is still valid after wait
-      if (!Socket || !bShouldRun)
+      if (!bShouldRun) break;  // Double-check before locking
+      FScopeLock Lock(&SocketLock);
+      if (Socket)
+      {
+        // Use very short timeout (10ms) so we can check bShouldRun frequently
+        bHasData = Socket->Wait(ESocketWaitConditions::WaitForRead, FTimespan::FromMilliseconds(10));
+      }
+      else
       {
         break;
       }
-      
-      bool bRecvSuccess = Socket->Recv(ReceivedData, 1024, BytesRead);
-      
-      if (bRecvSuccess && BytesRead > 0)
+    }
+    
+    // If we have data, receive it
+    if (bHasData && bShouldRun)
+    {
+      if (!bShouldRun) break;  // Double-check before locking
+      FScopeLock Lock(&SocketLock);
+      if (Socket && bShouldRun)
       {
-        // Manual C-string parsing (FString is not thread-safe)
-        char TempBuffer[1025];
-        FMemory::Memcpy(TempBuffer, ReceivedData, BytesRead);
-        TempBuffer[BytesRead] = '\0';
+        bool bRecvSuccess = Socket->Recv(ReceivedData, 1024, BytesRead);
         
-        float NewLeft = LeftOffset;
-        float NewRight = RightOffset;
-        
-        // Parse format: "left:0.5,right:0.7"
-        char* Context = nullptr;
-        char* Token = strtok_r(TempBuffer, ",", &Context);
-        
-        while (Token != nullptr)
+        if (bRecvSuccess && BytesRead > 0)
         {
-          char* Colon = strchr(Token, ':');
-          if (Colon != nullptr)
+          // Manual C-string parsing (FString is not thread-safe)
+          char TempBuffer[1025];
+          FMemory::Memcpy(TempBuffer, ReceivedData, BytesRead);
+          TempBuffer[BytesRead] = '\0';
+          
+          float NewLeft = LeftOffset;
+          float NewRight = RightOffset;
+          
+          // Parse format: "left:0.5,right:0.7"
+          char* Context = nullptr;
+          char* Token = strtok_r(TempBuffer, ",", &Context);
+          
+          while (Token != nullptr)
           {
-            *Colon = '\0';  // Split at colon
-            char* Key = Token;
-            char* ValueStr = Colon + 1;
-            
-            // Trim whitespace
-            while (*Key == ' ') Key++;
-            while (*ValueStr == ' ') ValueStr++;
-            
-            float Value = atof(ValueStr);
-            Value = FMath::Clamp(Value, 0.0f, 1.0f);
-            
-            // Case-insensitive comparison
-            if (strcasecmp(Key, "left") == 0)
+            char* Colon = strchr(Token, ':');
+            if (Colon != nullptr)
             {
-              NewLeft = Value;
+              *Colon = '\0';  // Split at colon
+              char* Key = Token;
+              char* ValueStr = Colon + 1;
+              
+              // Trim whitespace
+              while (*Key == ' ') Key++;
+              while (*ValueStr == ' ') ValueStr++;
+              
+              float Value = atof(ValueStr);
+              Value = FMath::Clamp(Value, 0.0f, 1.0f);
+              
+              // Case-insensitive comparison
+              if (strcasecmp(Key, "left") == 0)
+              {
+                NewLeft = Value;
+              }
+              else if (strcasecmp(Key, "right") == 0)
+              {
+                NewRight = Value;
+              }
             }
-            else if (strcasecmp(Key, "right") == 0)
-            {
-              NewRight = Value;
-            }
+            
+            Token = strtok_r(nullptr, ",", &Context);
           }
           
-          Token = strtok_r(nullptr, ",", &Context);
-        }
-        
-        // Thread-safe update
-        {
-          FScopeLock Lock(&DataLock);
-          LeftOffset = NewLeft;
-          RightOffset = NewRight;
+          // Thread-safe update
+          {
+            FScopeLock Lock(&DataLock);
+            LeftOffset = NewLeft;
+            RightOffset = NewRight;
+          }
         }
       }
     }
@@ -205,13 +200,16 @@ void FUdpMirrorReceiver::Stop()
   bShouldRun = false;
   
   // Close the socket immediately to unblock Socket->Wait() in the thread
-  if (Socket)
   {
-    Socket->Close();
+    FScopeLock Lock(&SocketLock);
+    if (Socket)
+    {
+      Socket->Close();
+    }
   }
   
-  // Give the thread a moment to exit its loop
-  FPlatformProcess::Sleep(0.2f);
+  // Thread checks bShouldRun every 10ms, so 50ms should be plenty
+  FPlatformProcess::Sleep(0.05f);
 }
 
 void FUdpMirrorReceiver::Exit()
@@ -219,6 +217,7 @@ void FUdpMirrorReceiver::Exit()
   // Ensure thread has stopped
   bShouldRun = false;
   
+  FScopeLock Lock(&SocketLock);
   if (Socket)
   {
     // Socket may already be closed by Stop(), just ensure it's destroyed
@@ -256,13 +255,11 @@ ACarlaSpectatorPawn::ACarlaSpectatorPawn(const FObjectInitializer& ObjectInitial
 
   // Create the forward-facing camera component (CENTER SCREEN)
   ForwardCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("ForwardCamera"));
-  ForwardCamera->SetupAttachment(RootComponent);
   ForwardCamera->SetRelativeLocation(FVector(0.0f, 0.0f, 0.0f));
   ForwardCamera->SetRelativeRotation(FRotator(0.0f, 0.0f, 0.0f));
 
   // Create the left-facing scene capture component (LEFT SCREEN - 90° left)
   LeftSceneCapture = CreateDefaultSubobject<USceneCaptureComponent2D>(TEXT("LeftSceneCapture"));
-  LeftSceneCapture->SetupAttachment(RootComponent);
   LeftSceneCapture->SetRelativeLocation(FVector(0.0f, 0.0f, 0.0f));
   LeftSceneCapture->SetRelativeRotation(FRotator(0.0f, -90.0f, 0.0f));
   LeftSceneCapture->CaptureSource = SCS_FinalColorLDR;
@@ -271,7 +268,6 @@ ACarlaSpectatorPawn::ACarlaSpectatorPawn(const FObjectInitializer& ObjectInitial
 
   // Create the right-facing scene capture component (RIGHT SCREEN - 90° right)
   RightSceneCapture = CreateDefaultSubobject<USceneCaptureComponent2D>(TEXT("RightSceneCapture"));
-  RightSceneCapture->SetupAttachment(RootComponent);
   RightSceneCapture->SetRelativeLocation(FVector(0.0f, 0.0f, 0.0f));
   RightSceneCapture->SetRelativeRotation(FRotator(0.0f, 90.0f, 0.0f));
   RightSceneCapture->CaptureSource = SCS_FinalColorLDR;
@@ -280,7 +276,6 @@ ACarlaSpectatorPawn::ACarlaSpectatorPawn(const FObjectInitializer& ObjectInitial
 
   // Create the left rear-view scene capture component (REAR VIEW for left mirror - 180° rear)
   LeftRearSceneCapture = CreateDefaultSubobject<USceneCaptureComponent2D>(TEXT("LeftRearSceneCapture"));
-  LeftRearSceneCapture->SetupAttachment(RootComponent);
   LeftRearSceneCapture->SetRelativeLocation(FVector(0.0f, 0.0f, 0.0f));
   LeftRearSceneCapture->SetRelativeRotation(FRotator(0.0f, 180.0f, 0.0f));
   LeftRearSceneCapture->CaptureSource = SCS_FinalColorLDR;
@@ -289,7 +284,6 @@ ACarlaSpectatorPawn::ACarlaSpectatorPawn(const FObjectInitializer& ObjectInitial
 
   // Create the right rear-view scene capture component (REAR VIEW for right mirror - 180° rear)
   RightRearSceneCapture = CreateDefaultSubobject<USceneCaptureComponent2D>(TEXT("RightRearSceneCapture"));
-  RightRearSceneCapture->SetupAttachment(RootComponent);
   RightRearSceneCapture->SetRelativeLocation(FVector(0.0f, 0.0f, 0.0f));
   RightRearSceneCapture->SetRelativeRotation(FRotator(0.0f, 180.0f, 0.0f));
   RightRearSceneCapture->CaptureSource = SCS_FinalColorLDR;
@@ -311,10 +305,38 @@ ACarlaSpectatorPawn::ACarlaSpectatorPawn(const FObjectInitializer& ObjectInitial
 void ACarlaSpectatorPawn::BeginPlay()
 {
   Super::BeginPlay();
+  
+  // Check if another instance has already been initialized globally
+  // Use the same lock and flag as StartUdpReceiver to ensure atomicity
+  {
+    FScopeLock Lock(&GUdpReceiverLock);
+    if (GUdpReceiverActive)
+    {
+      UE_LOG(LogTemp, Warning, TEXT("CarlaSpectatorPawn: Another instance already initialized, this instance will be inactive"));
+      // DO NOT set bInitialized = true here! Leave it false so Tick won't try to use null pointers
+      return;
+    }
+    // Set flag here to reserve initialization for this instance
+    GUdpReceiverActive = true;
+  }
+  
   UE_LOG(LogTemp, Log, TEXT("CarlaSpectatorPawn: BeginPlay called, will initialize on first tick"));
   
+  // Attach components to root
+  USceneComponent* Root = GetRootComponent();
+  if (Root)
+  {
+    ForwardCamera->AttachToComponent(Root, FAttachmentTransformRules::KeepRelativeTransform);
+    LeftSceneCapture->AttachToComponent(Root, FAttachmentTransformRules::KeepRelativeTransform);
+    RightSceneCapture->AttachToComponent(Root, FAttachmentTransformRules::KeepRelativeTransform);
+    LeftRearSceneCapture->AttachToComponent(Root, FAttachmentTransformRules::KeepRelativeTransform);
+    RightRearSceneCapture->AttachToComponent(Root, FAttachmentTransformRules::KeepRelativeTransform);
+  }
+  
+  // TEMPORARILY DISABLE UDP TO TEST IF REST WORKS
   // Start asynchronous UDP receiver
-  StartUdpReceiver();
+  // StartUdpReceiver();
+  UE_LOG(LogTemp, Warning, TEXT("CarlaSpectatorPawn: UDP receiver DISABLED for testing"));
 }
 
 /**
@@ -324,17 +346,11 @@ void ACarlaSpectatorPawn::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
   Super::EndPlay(EndPlayReason);
   
-  // Stop UDP receiver
+  // Stop UDP receiver (will reset GUdpReceiverActive)
   StopUdpReceiver();
   
   // Reset initialization state for next PIE session
   bInitialized = false;
-  
-  // Reset global initialization flag
-  {
-    FScopeLock Lock(&GSpectatorLock);
-    GSpectatorInitialized = false;
-  }
   
   LeftRenderTarget = nullptr;
   RightRenderTarget = nullptr;
@@ -374,17 +390,6 @@ void ACarlaSpectatorPawn::Tick(float DeltaTime)
   
   if (!bInitialized && LeftRenderTarget == nullptr)
   {
-    // Check if another instance has already initialized globally
-    {
-      FScopeLock Lock(&GSpectatorLock);
-      if (GSpectatorInitialized)
-      {
-        UE_LOG(LogTemp, Warning, TEXT("CarlaSpectatorPawn: Another instance already initialized, skipping this one"));
-        return;
-      }
-      GSpectatorInitialized = true;
-    }
-    
     UWorld* World = GetWorld();
     if (!World) return;
 
@@ -650,32 +655,31 @@ void ACarlaSpectatorPawn::CreateTripleScreenWidget()
  */
 void ACarlaSpectatorPawn::StartUdpReceiver()
 {
-  FScopeLock Lock(&GUdpReceiverLock);
-  
-  // Prevent double initialization - check both instance and global state
-  if (UdpReceiver.IsValid() || UdpReceiverThread != nullptr || GUdpReceiverActive)
+  // Note: GUdpReceiverActive flag is already set in BeginPlay() before calling this
+  // Prevent double initialization at the instance level
+  if (UdpReceiver.IsValid() || UdpReceiverThread != nullptr)
   {
-    UE_LOG(LogTemp, Warning, TEXT("CarlaSpectatorPawn: UDP receiver already started (instance or global), skipping"));
+    UE_LOG(LogTemp, Warning, TEXT("CarlaSpectatorPawn: UDP receiver already started, skipping"));
     return;
   }
   
-  // Set flag BEFORE creating receiver to prevent race condition
-  GUdpReceiverActive = true;
-  
-  // Create and initialize UDP receiver
+  // Create UDP receiver
   UdpReceiver = MakeUnique<FUdpMirrorReceiver>(UdpPort);
   
-  if (UdpReceiver->Init())
+  // Create and start the receiver thread (FRunnableThread::Create will call Init() automatically)
+  UdpReceiverThread = FRunnableThread::Create(UdpReceiver.Get(), TEXT("UdpMirrorReceiverThread"), 0, TPri_Normal);
+  
+  if (UdpReceiverThread)
   {
-    // Create and start the receiver thread
-    UdpReceiverThread = FRunnableThread::Create(UdpReceiver.Get(), TEXT("UdpMirrorReceiverThread"), 0, TPri_Normal);
     UE_LOG(LogTemp, Log, TEXT("CarlaSpectatorPawn: UDP receiver thread started on port %d"), UdpPort);
   }
   else
   {
-    UE_LOG(LogTemp, Error, TEXT("CarlaSpectatorPawn: Failed to initialize UDP receiver"));
+    UE_LOG(LogTemp, Error, TEXT("CarlaSpectatorPawn: Failed to create UDP receiver thread"));
     UdpReceiver.Reset();
-    GUdpReceiverActive = false;  // Reset flag on failure
+    // Reset global flag on failure
+    FScopeLock Lock(&GUdpReceiverLock);
+    GUdpReceiverActive = false;
   }
 }
 
@@ -684,11 +688,16 @@ void ACarlaSpectatorPawn::StartUdpReceiver()
  */
 void ACarlaSpectatorPawn::StopUdpReceiver()
 {
-  FScopeLock Lock(&GUdpReceiverLock);
-  
-  if (UdpReceiver.IsValid())
+  // Check if we need to stop (without holding lock during shutdown)
+  bool bShouldStop = false;
   {
-    // Signal the thread to stop
+    FScopeLock Lock(&GUdpReceiverLock);
+    bShouldStop = UdpReceiver.IsValid();
+  }
+  
+  if (bShouldStop)
+  {
+    // Signal the thread to stop (without holding global lock)
     UdpReceiver->Stop();
     
     // Wait for thread to finish if it exists
@@ -699,9 +708,16 @@ void ACarlaSpectatorPawn::StopUdpReceiver()
       UdpReceiverThread = nullptr;
     }
     
-    // Cleanup receiver
-    UdpReceiver.Reset();
-    GUdpReceiverActive = false;  // Reset global flag
+    // Give the thread a moment to fully exit before destroying the receiver object
+    FPlatformProcess::Sleep(0.01f);  // 10ms
+    
+    // Now cleanup with lock
+    {
+      FScopeLock Lock(&GUdpReceiverLock);
+      UdpReceiver.Reset();
+      GUdpReceiverActive = false;
+    }
+    
     UE_LOG(LogTemp, Log, TEXT("CarlaSpectatorPawn: UDP receiver stopped"));
   }
 }
