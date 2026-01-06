@@ -333,10 +333,9 @@ void ACarlaSpectatorPawn::BeginPlay()
     RightRearSceneCapture->AttachToComponent(Root, FAttachmentTransformRules::KeepRelativeTransform);
   }
   
-  // TEMPORARILY DISABLE UDP TO TEST IF REST WORKS
-  // Start asynchronous UDP receiver
-  // StartUdpReceiver();
-  UE_LOG(LogTemp, Warning, TEXT("CarlaSpectatorPawn: UDP receiver DISABLED for testing"));
+  // Start asynchronous UDP receiver for dynamic mirror offset control
+  StartUdpReceiver();
+  UE_LOG(LogTemp, Log, TEXT("CarlaSpectatorPawn: UDP receiver ENABLED on port %d"), UdpPort);
 }
 
 /**
