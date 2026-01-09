@@ -290,6 +290,10 @@ ACarlaSpectatorPawn::ACarlaSpectatorPawn(const FObjectInitializer& ObjectInitial
   LeftSceneCapture->CaptureSource = SCS_FinalColorLDR;
   LeftSceneCapture->bCaptureEveryFrame = false;
   LeftSceneCapture->bCaptureOnMovement = false;
+  // Disable only the most expensive post-processing effects for performance
+  LeftSceneCapture->ShowFlags.SetMotionBlur(false);
+  LeftSceneCapture->ShowFlags.SetLensFlares(false);
+  LeftSceneCapture->ShowFlags.SetBloom(false);
 
   // Create the right-facing scene capture component (RIGHT SCREEN - 90° right)
   RightSceneCapture = CreateDefaultSubobject<USceneCaptureComponent2D>(TEXT("RightSceneCapture"));
@@ -298,6 +302,10 @@ ACarlaSpectatorPawn::ACarlaSpectatorPawn(const FObjectInitializer& ObjectInitial
   RightSceneCapture->CaptureSource = SCS_FinalColorLDR;
   RightSceneCapture->bCaptureEveryFrame = false;
   RightSceneCapture->bCaptureOnMovement = false;
+  // Disable only the most expensive post-processing effects for performance
+  RightSceneCapture->ShowFlags.SetMotionBlur(false);
+  RightSceneCapture->ShowFlags.SetLensFlares(false);
+  RightSceneCapture->ShowFlags.SetBloom(false);
 
   // Create the left rear-view scene capture component (REAR VIEW for left mirror - 180° rear)
   LeftRearSceneCapture = CreateDefaultSubobject<USceneCaptureComponent2D>(TEXT("LeftRearSceneCapture"));
@@ -306,6 +314,10 @@ ACarlaSpectatorPawn::ACarlaSpectatorPawn(const FObjectInitializer& ObjectInitial
   LeftRearSceneCapture->CaptureSource = SCS_FinalColorLDR;
   LeftRearSceneCapture->bCaptureEveryFrame = false;
   LeftRearSceneCapture->bCaptureOnMovement = false;
+  // Disable only the most expensive post-processing effects for performance
+  LeftRearSceneCapture->ShowFlags.SetMotionBlur(false);
+  LeftRearSceneCapture->ShowFlags.SetLensFlares(false);
+  LeftRearSceneCapture->ShowFlags.SetBloom(false);
 
   // Create the right rear-view scene capture component (REAR VIEW for right mirror - 180° rear)
   RightRearSceneCapture = CreateDefaultSubobject<USceneCaptureComponent2D>(TEXT("RightRearSceneCapture"));
@@ -314,6 +326,10 @@ ACarlaSpectatorPawn::ACarlaSpectatorPawn(const FObjectInitializer& ObjectInitial
   RightRearSceneCapture->CaptureSource = SCS_FinalColorLDR;
   RightRearSceneCapture->bCaptureEveryFrame = false;
   RightRearSceneCapture->bCaptureOnMovement = false;
+  // Disable only the most expensive post-processing effects for performance
+  RightRearSceneCapture->ShowFlags.SetMotionBlur(false);
+  RightRearSceneCapture->ShowFlags.SetLensFlares(false);
+  RightRearSceneCapture->ShowFlags.SetBloom(false);
 
   LeftRenderTarget = nullptr;
   RightRenderTarget = nullptr;
