@@ -893,18 +893,28 @@ void ACarlaSpectatorPawn::UpdateHeroVehicleTracking(float DeltaTime)
   }
 
   // If we have a hero vehicle, follow it
-  if (HeroVehicle && IsValid(HeroVehicle))
+  if (HeroVehicle)
   {
-    FTransform VehicleTransform = HeroVehicle->GetActorTransform();
-    
-    // Apply camera offset in vehicle's local space
-    FVector WorldOffset = VehicleTransform.TransformVector(CameraOffset);
-    FVector NewLocation = VehicleTransform.GetLocation() + WorldOffset;
-    FRotator NewRotation = VehicleTransform.GetRotation().Rotator();
-    
-    // Update spectator transform
-    SetActorLocation(NewLocation);
-    SetActorRotation(NewRotation);
+    // Check if the vehicle is still valid (not destroyed)
+    if (IsValid(HeroVehicle))
+    {
+      FTransform VehicleTransform = HeroVehicle->GetActorTransform();
+      
+      // Apply camera offset in vehicle's local space
+      FVector WorldOffset = VehicleTransform.TransformVector(CameraOffset);
+      FVector NewLocation = VehicleTransform.GetLocation() + WorldOffset;
+      FRotator NewRotation = VehicleTransform.GetRotation().Rotator();
+      
+      // Update spectator transform
+      SetActorLocation(NewLocation);
+      SetActorRotation(NewRotation);
+    }
+    else
+    {
+      // Vehicle was destroyed, clear the reference
+      HeroVehicle = nullptr;
+      UE_LOG(LogTemp, Warning, TEXT("CarlaSpectatorPawn: Hero vehicle was destroyed, searching for new one"));
+    }
   }
 }
 
