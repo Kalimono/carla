@@ -290,7 +290,6 @@ ACarlaSpectatorPawn::ACarlaSpectatorPawn(const FObjectInitializer& ObjectInitial
   LeftSceneCapture->CaptureSource = SCS_FinalColorLDR;
   LeftSceneCapture->bCaptureEveryFrame = false;
   LeftSceneCapture->bCaptureOnMovement = false;
-  // Disable only the most expensive post-processing effects for performance
   LeftSceneCapture->ShowFlags.SetMotionBlur(false);
   LeftSceneCapture->ShowFlags.SetLensFlares(false);
   LeftSceneCapture->ShowFlags.SetBloom(false);
@@ -302,7 +301,6 @@ ACarlaSpectatorPawn::ACarlaSpectatorPawn(const FObjectInitializer& ObjectInitial
   RightSceneCapture->CaptureSource = SCS_FinalColorLDR;
   RightSceneCapture->bCaptureEveryFrame = false;
   RightSceneCapture->bCaptureOnMovement = false;
-  // Disable only the most expensive post-processing effects for performance
   RightSceneCapture->ShowFlags.SetMotionBlur(false);
   RightSceneCapture->ShowFlags.SetLensFlares(false);
   RightSceneCapture->ShowFlags.SetBloom(false);
@@ -314,7 +312,6 @@ ACarlaSpectatorPawn::ACarlaSpectatorPawn(const FObjectInitializer& ObjectInitial
   LeftRearSceneCapture->CaptureSource = SCS_FinalColorLDR;
   LeftRearSceneCapture->bCaptureEveryFrame = false;
   LeftRearSceneCapture->bCaptureOnMovement = false;
-  // Disable only the most expensive post-processing effects for performance
   LeftRearSceneCapture->ShowFlags.SetMotionBlur(false);
   LeftRearSceneCapture->ShowFlags.SetLensFlares(false);
   LeftRearSceneCapture->ShowFlags.SetBloom(false);
@@ -326,7 +323,6 @@ ACarlaSpectatorPawn::ACarlaSpectatorPawn(const FObjectInitializer& ObjectInitial
   RightRearSceneCapture->CaptureSource = SCS_FinalColorLDR;
   RightRearSceneCapture->bCaptureEveryFrame = false;
   RightRearSceneCapture->bCaptureOnMovement = false;
-  // Disable only the most expensive post-processing effects for performance
   RightRearSceneCapture->ShowFlags.SetMotionBlur(false);
   RightRearSceneCapture->ShowFlags.SetLensFlares(false);
   RightRearSceneCapture->ShowFlags.SetBloom(false);
@@ -866,6 +862,12 @@ void ACarlaSpectatorPawn::UpdateHeroVehicleTracking(float DeltaTime)
             {
               UE_LOG(LogTemp, Log, TEXT("CarlaSpectatorPawn: Found hero vehicle: %s (role_name='%s')"), 
                 *HeroVehicle->GetName(), *RoleName);
+              
+              // Hide the hero vehicle entirely to prevent jitter caused by
+              // Python API update lag vs C++ frame rate
+              HeroVehicle->SetActorHiddenInGame(true);
+              UE_LOG(LogTemp, Log, TEXT("CarlaSpectatorPawn: Hidden hero vehicle from game"));
+              
               bFoundHero = true;
               break;
             }
