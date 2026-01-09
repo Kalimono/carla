@@ -227,6 +227,12 @@ private:
   float UdpUpdateTimer;
 
   /**
+   * Time accumulator for updating rear mirrors (every 0.033 seconds = 30Hz).
+   * Reduces GPU load by updating mirrors less frequently than main views.
+   */
+  float MirrorUpdateTimer;
+
+  /**
    * UDP port to listen on for mirror offset updates.
    */
   int32 UdpPort = 8888;
@@ -245,4 +251,24 @@ private:
    * Updates mirror offsets from UDP data.
    */
   void UpdateMirrorOffsetsFromUdp();
+
+  /**
+   * Finds and tracks the hero vehicle in the world.
+   */
+  void UpdateHeroVehicleTracking(float DeltaTime);
+
+  /**
+   * Cached reference to the hero vehicle being tracked.
+   */
+  AActor* HeroVehicle;
+
+  /**
+   * Camera offset from vehicle origin (driver's eye position).
+   */
+  FVector CameraOffset;
+
+  /**
+   * Timer for hero vehicle search logging.
+   */
+  float HeroSearchLogTimer;
 };

@@ -22,6 +22,8 @@
 #include "SocketSubsystem.h"
 #include "IPAddress.h"
 #include "HAL/RunnableThread.h"
+#include "Carla/Game/CarlaStatics.h"
+#include "Carla/Game/CarlaEpisode.h"
 #include <string.h>  // For strtok_r, strchr, strcasecmp
 
 // Global flags to prevent multiple instances across PIE
@@ -44,12 +46,28 @@ FUdpMirrorReceiver::FUdpMirrorReceiver(int32 Port)
 
 FUdpMirrorReceiver::~FUdpMirrorReceiver()
 {
+  // Stop the thread
   Stop();
+  
+  // Wait for thread to complete
   if (Thread)
   {
     Thread->WaitForCompletion();
     delete Thread;
     Thread = nullptr;
+  }
+  
+  // Clean up socket if still exists
+  FScopeLock Lock(&SocketLock);
+  if (Socket)
+  {
+    Socket->Close();
+    ISocketSubsystem* SocketSubsystem = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM);
+    if (SocketSubsystem)
+    {
+      SocketSubsystem->DestroySocket(Socket);
+    }
+    Socket = nullptr;
   }
 }
 
@@ -223,7 +241,13 @@ void FUdpMirrorReceiver::Exit()
     // Socket may already be closed by Stop(), just ensure it's destroyed
     // Don't call GetConnectionState() as socket might be in invalid state
     Socket->Close();
-    ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM)->DestroySocket(Socket);
+    
+    // Check if socket subsystem is still available before destroying
+    ISocketSubsystem* SocketSubsystem = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM);
+    if (SocketSubsystem)
+    {
+      SocketSubsystem->DestroySocket(Socket);
+    }
     Socket = nullptr;
   }
   UE_LOG(LogTemp, Log, TEXT("FUdpMirrorReceiver: Thread exiting"));
@@ -252,6 +276,7 @@ ACarlaSpectatorPawn::ACarlaSpectatorPawn(const FObjectInitializer& ObjectInitial
   TripleScreenWidgetInstance = nullptr;
   UdpReceiverThread = nullptr;
   UdpUpdateTimer = 0.0f;
+  MirrorUpdateTimer = 0.0f;
 
   // Create the forward-facing camera component (CENTER SCREEN)
   ForwardCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("ForwardCamera"));
@@ -297,6 +322,12 @@ ACarlaSpectatorPawn::ACarlaSpectatorPawn(const FObjectInitializer& ObjectInitial
 
   // Initialize UDP receiver
   UdpUpdateTimer = 0.0f;
+
+  // Initialize hero vehicle tracking
+  HeroVehicle = nullptr;
+  // Camera offset: x=1.6m forward, z=1.7m up (driver's eye position)
+  CameraOffset = FVector(160.0f, 0.0f, 170.0f);  // Convert meters to cm
+  HeroSearchLogTimer = 0.0f;
 }
 
 /**
@@ -343,13 +374,17 @@ void ACarlaSpectatorPawn::BeginPlay()
  */
 void ACarlaSpectatorPawn::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-  Super::EndPlay(EndPlayReason);
+  UE_LOG(LogTemp, Log, TEXT("CarlaSpectatorPawn: EndPlay called"));
   
-  // Stop UDP receiver (will reset GUdpReceiverActive)
+  // Stop UDP receiver FIRST (will reset GUdpReceiverActive)
+  // This must complete before we call Super::EndPlay()
   StopUdpReceiver();
   
   // Reset initialization state for next PIE session
   bInitialized = false;
+  HeroVehicle = nullptr;
+  
+  Super::EndPlay(EndPlayReason);
   
   LeftRenderTarget = nullptr;
   RightRenderTarget = nullptr;
@@ -375,6 +410,12 @@ void ACarlaSpectatorPawn::Tick(float DeltaTime)
 {
   Super::Tick(DeltaTime);
   
+  // Update spectator position to follow hero vehicle (only after world is ready)
+  if (GetWorld() && GetWorld()->HasBegunPlay())
+  {
+    UpdateHeroVehicleTracking(DeltaTime);
+  }
+  
   // Only update mirror offsets if initialization is complete
   if (bInitialized)
   {
@@ -384,6 +425,15 @@ void ACarlaSpectatorPawn::Tick(float DeltaTime)
     {
       UdpUpdateTimer = 0.0f;
       UpdateMirrorOffsetsFromUdp();
+    }
+
+    // Update rear mirrors at 30Hz instead of every frame for better performance
+    MirrorUpdateTimer += DeltaTime;
+    if (MirrorUpdateTimer >= 0.033f)  // ~30 FPS
+    {
+      MirrorUpdateTimer = 0.0f;
+      if (LeftRearSceneCapture) LeftRearSceneCapture->CaptureScene();
+      if (RightRearSceneCapture) RightRearSceneCapture->CaptureScene();
     }
   }
   
@@ -418,10 +468,10 @@ void ACarlaSpectatorPawn::Tick(float DeltaTime)
     UE_LOG(LogTemp, Log, TEXT("CarlaSpectatorPawn: Viewport %dx%d, each camera %dx%d"), 
       ViewportWidth, ViewportHeight, SingleScreenWidth, SingleScreenHeight);
 
-    // Use fixed resolution for render targets (1920x1080 per screen)
-    // This prevents aspect ratio distortion when viewport is resized
-    const int32 TargetWidth = 1920;
-    const int32 TargetHeight = 1080;
+    // Use fixed resolution for render targets (1280x720 per screen)
+    // Lower resolution improves performance on laptops with limited GPU memory
+    const int32 TargetWidth = 1280;  // 720p instead of 1080p
+    const int32 TargetHeight = 720;
 
     // Create LEFT render target
     LeftRenderTarget = NewObject<UTextureRenderTarget2D>(this, TEXT("LeftRenderTarget"));
@@ -448,9 +498,9 @@ void ACarlaSpectatorPawn::Tick(float DeltaTime)
     }
 
     // Create rear-view render targets (wider to allow horizontal cropping)
-    // Width is 3x the mirror width (200) to provide cropping range
-    const int32 RearTargetWidth = 1920;  // Wide rear view for cropping
-    const int32 RearTargetHeight = 1080; // Full height
+    // Smaller resolution for mirrors improves performance
+    const int32 RearTargetWidth = 800;   // Smaller for rear mirrors
+    const int32 RearTargetHeight = 600;  // 600p for mirrors
 
     // Create LEFT REAR render target
     LeftRearRenderTarget = NewObject<UTextureRenderTarget2D>();
@@ -582,7 +632,7 @@ void ACarlaSpectatorPawn::CreateTripleScreenWidget()
       [
         SNew(SBox)
         .HAlign(HAlign_Center)
-        .VAlign(VAlign_Center)
+        .VAlign(VAlign_Fill)
         .Clipping(EWidgetClipping::ClipToBounds)
         [
           SNew(SImage)
@@ -621,7 +671,7 @@ void ACarlaSpectatorPawn::CreateTripleScreenWidget()
       [
         SNew(SBox)
         .HAlign(HAlign_Center)
-        .VAlign(VAlign_Center)
+        .VAlign(VAlign_Fill)
         .Clipping(EWidgetClipping::ClipToBounds)
         [
           SNew(SImage)
@@ -687,19 +737,15 @@ void ACarlaSpectatorPawn::StartUdpReceiver()
  */
 void ACarlaSpectatorPawn::StopUdpReceiver()
 {
-  // Check if we need to stop (without holding lock during shutdown)
-  bool bShouldStop = false;
+  // Stop the thread first if it exists (outside lock to avoid blocking)
+  if (UdpReceiver.IsValid())
   {
-    FScopeLock Lock(&GUdpReceiverLock);
-    bShouldStop = UdpReceiver.IsValid();
-  }
-  
-  if (bShouldStop)
-  {
-    // Signal the thread to stop (without holding global lock)
+    UE_LOG(LogTemp, Log, TEXT("CarlaSpectatorPawn: Stopping UDP receiver..."));
+    
+    // Signal the thread to stop
     UdpReceiver->Stop();
     
-    // Wait for thread to finish if it exists
+    // Wait for thread to finish before destroying anything
     if (UdpReceiverThread)
     {
       UdpReceiverThread->WaitForCompletion();
@@ -707,10 +753,10 @@ void ACarlaSpectatorPawn::StopUdpReceiver()
       UdpReceiverThread = nullptr;
     }
     
-    // Give the thread a moment to fully exit before destroying the receiver object
-    FPlatformProcess::Sleep(0.01f);  // 10ms
+    // Additional safety delay to ensure Exit() has completed
+    FPlatformProcess::Sleep(0.05f);  // 50ms
     
-    // Now cleanup with lock
+    // Now safely destroy the receiver object and reset global flag
     {
       FScopeLock Lock(&GUdpReceiverLock);
       UdpReceiver.Reset();
@@ -718,6 +764,12 @@ void ACarlaSpectatorPawn::StopUdpReceiver()
     }
     
     UE_LOG(LogTemp, Log, TEXT("CarlaSpectatorPawn: UDP receiver stopped"));
+  }
+  else
+  {
+    // Just reset the flag if receiver was never created
+    FScopeLock Lock(&GUdpReceiverLock);
+    GUdpReceiverActive = false;
   }
 }
 
@@ -754,6 +806,87 @@ void ACarlaSpectatorPawn::UpdateMirrorOffsetsFromUdp()
         FVector2D(RightMirrorCropOffset + MirrorWidthRatio * 0.5f, 1.0f)
       ));
     }
+  }
+}
+
+/**
+ * UpdateHeroVehicleTracking Implementation
+ */
+void ACarlaSpectatorPawn::UpdateHeroVehicleTracking(float DeltaTime)
+{
+  UWorld* World = GetWorld();
+  if (!World) return;
+
+  // Try to find hero vehicle if we don't have it cached
+  if (HeroVehicle == nullptr)// || !IsValid(HeroVehicle))
+  {
+    // Get the CARLA episode to access the actor registry
+    UCarlaEpisode* Episode = UCarlaStatics::GetCurrentEpisode(World);
+    if (!Episode)
+    {
+      return; // Episode not ready yet
+    }
+    
+    // Search for vehicle with role_name="hero" in the actor registry
+    bool bFoundHero = false;
+    const FActorRegistry& Registry = Episode->GetActorRegistry();
+    
+    for (auto It = Registry.begin(); It != Registry.end(); ++It)
+    {
+      FCarlaActor* CarlaActor = It.Value().Get();
+      if (CarlaActor && CarlaActor->GetActorType() == FCarlaActor::ActorType::Vehicle)
+      {
+        // Get the actor description to check role_name
+        const FActorInfo* ActorInfo = CarlaActor->GetActorInfo();
+        if (ActorInfo)
+        {
+          FActorAttribute RoleNameAttr = ActorInfo->Description.GetAttribute(TEXT("role_name"));
+          FString RoleName = RoleNameAttr.Value;
+          
+          if (RoleName.Equals(TEXT("hero"), ESearchCase::IgnoreCase))
+          {
+            HeroVehicle = CarlaActor->GetActor();
+            if (HeroVehicle)
+            {
+              UE_LOG(LogTemp, Log, TEXT("CarlaSpectatorPawn: Found hero vehicle: %s (role_name='%s')"), 
+                *HeroVehicle->GetName(), *RoleName);
+              bFoundHero = true;
+              break;
+            }
+          }
+        }
+      }
+    }
+    
+    // Log if no hero found (only once per second to avoid spam)
+    if (!bFoundHero)
+    {
+      HeroSearchLogTimer += DeltaTime;
+      if (HeroSearchLogTimer >= 1.0f)
+      {
+        UE_LOG(LogTemp, Warning, TEXT("CarlaSpectatorPawn: No hero vehicle found in actor registry. Make sure vehicle has role_name='hero' attribute"));
+        HeroSearchLogTimer = 0.0f;
+      }
+    }
+    else
+    {
+      HeroSearchLogTimer = 0.0f;
+    }
+  }
+
+  // If we have a hero vehicle, follow it
+  if (HeroVehicle && IsValid(HeroVehicle))
+  {
+    FTransform VehicleTransform = HeroVehicle->GetActorTransform();
+    
+    // Apply camera offset in vehicle's local space
+    FVector WorldOffset = VehicleTransform.TransformVector(CameraOffset);
+    FVector NewLocation = VehicleTransform.GetLocation() + WorldOffset;
+    FRotator NewRotation = VehicleTransform.GetRotation().Rotator();
+    
+    // Update spectator transform
+    SetActorLocation(NewLocation);
+    SetActorRotation(NewRotation);
   }
 }
 
