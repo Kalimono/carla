@@ -26,7 +26,7 @@ try:
     
     while True:
         # Calculate offset (0.0 to 1.0)
-        progress = step
+        progress = step / 100.0
         
         # Create message in format: "left:X,right:Y"
         # Both mirrors move together in this example
