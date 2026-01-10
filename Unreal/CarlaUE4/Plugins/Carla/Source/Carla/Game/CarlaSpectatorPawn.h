@@ -233,6 +233,13 @@ private:
   float MirrorUpdateTimer;
 
   /**
+   * Enable/disable rearview mirrors for performance testing.
+   * Toggle this in the editor to measure performance impact of mirrors.
+   */
+  UPROPERTY(Category = "CARLA Spectator", EditAnywhere)
+  bool bEnableRearviewMirrors = false;
+
+  /**
    * UDP port to listen on for mirror offset updates.
    */
   int32 UdpPort = 8888;
