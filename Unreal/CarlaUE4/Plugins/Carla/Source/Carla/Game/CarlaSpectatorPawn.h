@@ -15,6 +15,7 @@
 #include "Blueprint/UserWidget.h"
 #include "HAL/Runnable.h"
 #include "HAL/ThreadSafeBool.h"
+#include "Components/AudioComponent.h"
 #include "CarlaSpectatorPawn.generated.h"
 
 // Forward declarations
@@ -162,6 +163,13 @@ public:
    */
   UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
   UTextureRenderTarget2D* RightRearRenderTarget;
+
+  /**
+   * Engine sound audio component.
+   * Plays engine sound based on RPM parameter from the hero vehicle.
+   */
+  UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Audio")
+  UAudioComponent* EngineCue;
 
   /**
    * Horizontal crop offset for left rear-view mirror (0.0 = left edge, 1.0 = right edge).

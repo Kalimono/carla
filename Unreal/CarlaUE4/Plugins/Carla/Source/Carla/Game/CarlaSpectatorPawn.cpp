@@ -24,6 +24,9 @@
 #include "HAL/RunnableThread.h"
 #include "Carla/Game/CarlaStatics.h"
 #include "Carla/Game/CarlaEpisode.h"
+#include "Carla/Vehicle/CarlaWheeledVehicle.h"
+#include "WheeledVehicleMovementComponent.h"
+#include "Sound/SoundCue.h"
 #include <string.h>  // For strtok_r, strchr, strcasecmp
 
 // Global flags to prevent multiple instances across PIE
@@ -304,6 +307,30 @@ ACarlaSpectatorPawn::ACarlaSpectatorPawn(const FObjectInitializer& ObjectInitial
   RightSceneCapture->ShowFlags.SetMotionBlur(false);
   RightSceneCapture->ShowFlags.SetLensFlares(false);
   RightSceneCapture->ShowFlags.SetBloom(false);
+
+  // Create the engine sound audio component
+  EngineCue = CreateDefaultSubobject<UAudioComponent>(TEXT("EngineCue"));
+  EngineCue->SetupAttachment(RootComponent);  // Attach to the pawn
+  EngineCue->bAutoActivate = false;
+  EngineCue->bStopWhenOwnerDestroyed = false;
+  EngineCue->bIsUISound = true;  // Make it non-spatialized (2D sound)
+  EngineCue->bAllowSpatialization = false;
+  EngineCue->bOverrideAttenuation = true;
+  EngineCue->bIgnoreForFlushing = true;
+  EngineCue->SetVolumeMultiplier(2.0f);  // Increase volume
+  
+  // Load the EngineCue sound asset at /Game/Carla/Sounds/EngineCue
+  static ConstructorHelpers::FObjectFinder<USoundCue> EngineSoundCue(
+    TEXT("/Game/Carla/Sounds/EngineCue"));
+  if (EngineSoundCue.Succeeded())
+  {
+    EngineCue->SetSound(EngineSoundCue.Object);
+    UE_LOG(LogTemp, Log, TEXT("CarlaSpectatorPawn: Engine sound cue loaded successfully"));
+  }
+  else
+  {
+    UE_LOG(LogTemp, Warning, TEXT("CarlaSpectatorPawn: Failed to load EngineCue sound asset at /Game/Carla/Sounds/EngineCue"));
+  }
 
   // Create the left rear-view scene capture component (REAR VIEW for left mirror - 180° rear)
   LeftRearSceneCapture = CreateDefaultSubobject<USceneCaptureComponent2D>(TEXT("LeftRearSceneCapture"));
@@ -880,7 +907,14 @@ void ACarlaSpectatorPawn::UpdateHeroVehicleTracking(float DeltaTime)
         {
           FActorAttribute RoleNameAttr = ActorInfo->Description.GetAttribute(TEXT("role_name"));
           FString RoleName = RoleNameAttr.Value;
-          
+          // Activate engine sound when hero vehicle is found
+              if (EngineCue && !EngineCue->IsActive())
+              {
+                EngineCue->Activate(true);
+                UE_LOG(LogTemp, Log, TEXT("CarlaSpectatorPawn: Engine sound activated"));
+              }
+              
+              
           if (RoleName.Equals(TEXT("hero"), ESearchCase::IgnoreCase))
           {
             HeroVehicle = CarlaActor->GetActor();
@@ -930,6 +964,31 @@ void ACarlaSpectatorPawn::UpdateHeroVehicleTracking(float DeltaTime)
       FVector WorldOffset = VehicleTransform.TransformVector(CameraOffset);
       FVector NewLocation = VehicleTransform.GetLocation() + WorldOffset;
       FRotator NewRotation = VehicleTransform.GetRotation().Rotator();
+
+      // Update engine sound based on hero vehicle's RPM
+      if (EngineCue && EngineCue->IsActive())
+      {
+        ACarlaWheeledVehicle* CarlaVehicle = Cast<ACarlaWheeledVehicle>(HeroVehicle);
+        if (CarlaVehicle)
+        {
+          UWheeledVehicleMovementComponent* MovementComponent = CarlaVehicle->GetVehicleMovement();
+          if (MovementComponent)
+          {
+            float RPM = MovementComponent->GetEngineRotationSpeed();
+            EngineCue->SetFloatParameter(FName("RPM"), RPM);
+            
+            // Debug log (only log occasionally to avoid spam)
+            static float LogTimer = 0.0f;
+            LogTimer += DeltaTime;
+            if (LogTimer >= 1.0f)
+            {
+              UE_LOG(LogTemp, Log, TEXT("CarlaSpectatorPawn: Engine RPM = %.1f, Sound playing = %s"), 
+                RPM, EngineCue->IsPlaying() ? TEXT("Yes") : TEXT("No"));
+              LogTimer = 0.0f;
+            }
+          }
+        }
+      }
       
       // Update spectator transform
       SetActorLocation(NewLocation);
