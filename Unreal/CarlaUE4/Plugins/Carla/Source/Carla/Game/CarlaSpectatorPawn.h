@@ -99,7 +99,18 @@ protected:
    */
   virtual void Tick(float DeltaTime) override;
 
+  /**
+   * Sets up input bindings for the spectator pawn.
+   */
+  virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
+
 public:
+
+  /**
+   * Toggles rearview mirrors on/off.
+   */
+  UFUNCTION(BlueprintCallable, Category = "Camera")
+  void ToggleRearviewMirrors();
   
   /**
    * Forward-facing camera component (center screen - main view).
@@ -218,6 +229,12 @@ private:
    */
   TSharedPtr<FSlateBrush> LeftRearBrush;
   TSharedPtr<FSlateBrush> RightRearBrush;
+
+  /**
+   * References to mirror widgets for dynamic visibility control.
+   */
+  TSharedPtr<SWidget> LeftMirrorWidget;
+  TSharedPtr<SWidget> RightMirrorWidget;
 
   /**
    * Asynchronous UDP receiver for mirror crop offset updates.

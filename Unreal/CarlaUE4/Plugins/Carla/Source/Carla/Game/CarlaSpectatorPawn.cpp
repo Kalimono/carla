@@ -153,7 +153,7 @@ uint32 FUdpMirrorReceiver::Run()
     if (bHasData && bShouldRun)
     {
       if (!bShouldRun) break;  // Double-check before locking
-      FScopeLock Lock(&SocketLock);
+      FScopeLock RecvLock(&SocketLock);
       if (Socket && bShouldRun)
       {
         bool bRecvSuccess = Socket->Recv(ReceivedData, 1024, BytesRead);
@@ -204,7 +204,7 @@ uint32 FUdpMirrorReceiver::Run()
           
           // Thread-safe update
           {
-            FScopeLock Lock(&DataLock);
+            FScopeLock DataUpdateLock(&DataLock);
             LeftOffset = NewLeft;
             RightOffset = NewRight;
           }
@@ -400,16 +400,67 @@ void ACarlaSpectatorPawn::BeginPlay()
     LeftSceneCapture->AttachToComponent(Root, FAttachmentTransformRules::KeepRelativeTransform);
     RightSceneCapture->AttachToComponent(Root, FAttachmentTransformRules::KeepRelativeTransform);
     
-    if (bEnableRearviewMirrors)
-    {
-      LeftRearSceneCapture->AttachToComponent(Root, FAttachmentTransformRules::KeepRelativeTransform);
-      RightRearSceneCapture->AttachToComponent(Root, FAttachmentTransformRules::KeepRelativeTransform);
-    }
+    // Always attach rear scene captures so they follow the spectator (visibility controlled separately)
+    LeftRearSceneCapture->AttachToComponent(Root, FAttachmentTransformRules::KeepRelativeTransform);
+    RightRearSceneCapture->AttachToComponent(Root, FAttachmentTransformRules::KeepRelativeTransform);
   }
   
-  // Start asynchronous UDP receiver for dynamic mirror offset control
-  StartUdpReceiver();
-  UE_LOG(LogTemp, Log, TEXT("CarlaSpectatorPawn: UDP receiver ENABLED on port %d"), UdpPort);
+  // Start asynchronous UDP receiver for dynamic mirror offset control (disabled for now)
+  // StartUdpReceiver();
+  // UE_LOG(LogTemp, Log, TEXT("CarlaSpectatorPawn: UDP receiver ENABLED on port %d"), UdpPort);
+}
+
+/**
+ * SetupPlayerInputComponent Implementation
+ */
+void ACarlaSpectatorPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
+{
+  Super::SetupPlayerInputComponent(PlayerInputComponent);
+  
+  // Safely bind toggle rearview mirrors action
+  if (PlayerInputComponent)
+  {
+    PlayerInputComponent->BindAction("ToggleRearviewMirrors", IE_Pressed, this, &ACarlaSpectatorPawn::ToggleRearviewMirrors);
+  }
+}
+
+/**
+ * ToggleRearviewMirrors Implementation
+ */
+void ACarlaSpectatorPawn::ToggleRearviewMirrors()
+{
+  bEnableRearviewMirrors = !bEnableRearviewMirrors;
+  
+  UE_LOG(LogTemp, Log, TEXT("CarlaSpectatorPawn: Rearview mirrors %s"), 
+    bEnableRearviewMirrors ? TEXT("ENABLED") : TEXT("DISABLED"));
+  
+  // Update scene capture visibility, activity, and capture flags
+  if (LeftRearSceneCapture)
+  {
+    LeftRearSceneCapture->SetVisibility(bEnableRearviewMirrors);
+    LeftRearSceneCapture->SetActive(bEnableRearviewMirrors);
+    LeftRearSceneCapture->bCaptureEveryFrame = bEnableRearviewMirrors;
+    LeftRearSceneCapture->bCaptureOnMovement = bEnableRearviewMirrors;
+  }
+  if (RightRearSceneCapture)
+  {
+    RightRearSceneCapture->SetVisibility(bEnableRearviewMirrors);
+    RightRearSceneCapture->SetActive(bEnableRearviewMirrors);
+    RightRearSceneCapture->bCaptureEveryFrame = bEnableRearviewMirrors;
+    RightRearSceneCapture->bCaptureOnMovement = bEnableRearviewMirrors;
+  }
+  
+  // Update Slate widget visibility
+  EVisibility NewVisibility = bEnableRearviewMirrors ? EVisibility::Visible : EVisibility::Hidden;
+  
+  if (LeftMirrorWidget.IsValid())
+  {
+    LeftMirrorWidget->SetVisibility(NewVisibility);
+  }
+  if (RightMirrorWidget.IsValid())
+  {
+    RightMirrorWidget->SetVisibility(NewVisibility);
+  }
 }
 
 /**
@@ -548,38 +599,31 @@ void ACarlaSpectatorPawn::Tick(float DeltaTime)
     const int32 RearTargetWidth = 800;   // Smaller for rear mirrors
     const int32 RearTargetHeight = 600;  // 600p for mirrors
 
-    // Create LEFT REAR render target (only if mirrors enabled)
-    if (bEnableRearviewMirrors)
+    // Always create LEFT REAR render target (visibility controlled separately)
+    LeftRearRenderTarget = NewObject<UTextureRenderTarget2D>();
+    if (LeftRearRenderTarget)
     {
-      LeftRearRenderTarget = NewObject<UTextureRenderTarget2D>();
-      if (LeftRearRenderTarget)
-      {
-        LeftRearRenderTarget->InitAutoFormat(RearTargetWidth, RearTargetHeight);
-        LeftRearRenderTarget->RenderTargetFormat = RTF_RGBA8;
-        LeftRearRenderTarget->UpdateResource();
-        LeftRearSceneCapture->TextureTarget = LeftRearRenderTarget;
-        UE_LOG(LogTemp, Log, TEXT("CarlaSpectatorPawn: Created LEFT REAR render target %dx%d"), 
-          RearTargetWidth, RearTargetHeight);
-      }
+      LeftRearRenderTarget->InitAutoFormat(RearTargetWidth, RearTargetHeight);
+      LeftRearRenderTarget->RenderTargetFormat = RTF_RGBA8;
+      LeftRearRenderTarget->UpdateResource();
+      LeftRearSceneCapture->TextureTarget = LeftRearRenderTarget;
+      UE_LOG(LogTemp, Log, TEXT("CarlaSpectatorPawn: Created LEFT REAR render target %dx%d"), 
+        RearTargetWidth, RearTargetHeight);
     }
 
-    // Create RIGHT REAR render target (only if mirrors enabled)
-    if (bEnableRearviewMirrors)
+    // Always create RIGHT REAR render target (visibility controlled separately)
+    RightRearRenderTarget = NewObject<UTextureRenderTarget2D>();
+    if (RightRearRenderTarget)
     {
-      RightRearRenderTarget = NewObject<UTextureRenderTarget2D>();
-      if (RightRearRenderTarget)
-      {
-        RightRearRenderTarget->InitAutoFormat(RearTargetWidth, RearTargetHeight);
-        RightRearRenderTarget->RenderTargetFormat = RTF_RGBA8;
-        RightRearRenderTarget->UpdateResource();
-        RightRearSceneCapture->TextureTarget = RightRearRenderTarget;
-        UE_LOG(LogTemp, Log, TEXT("CarlaSpectatorPawn: Created RIGHT REAR render target %dx%d"), 
-          RearTargetWidth, RearTargetHeight);
-      }
+      RightRearRenderTarget->InitAutoFormat(RearTargetWidth, RearTargetHeight);
+      RightRearRenderTarget->RenderTargetFormat = RTF_RGBA8;
+      RightRearRenderTarget->UpdateResource();
+      RightRearSceneCapture->TextureTarget = RightRearRenderTarget;
+      UE_LOG(LogTemp, Log, TEXT("CarlaSpectatorPawn: Created RIGHT REAR render target %dx%d"), 
+        RearTargetWidth, RearTargetHeight);
     }
 
-    bool bMirrorRenderTargetsReady = !bEnableRearviewMirrors || (LeftRearRenderTarget && RightRearRenderTarget);
-    if (LeftRenderTarget && RightRenderTarget && bMirrorRenderTargetsReady)
+    if (LeftRenderTarget && RightRenderTarget && LeftRearRenderTarget && RightRearRenderTarget)
     {
       // Enable scene captures now that render targets are ready
       LeftSceneCapture->bCaptureEveryFrame = true;
@@ -587,13 +631,11 @@ void ACarlaSpectatorPawn::Tick(float DeltaTime)
       RightSceneCapture->bCaptureEveryFrame = true;
       RightSceneCapture->bCaptureOnMovement = true;
       
-      if (bEnableRearviewMirrors)
-      {
-        LeftRearSceneCapture->bCaptureEveryFrame = true;
-        LeftRearSceneCapture->bCaptureOnMovement = true;
-        RightRearSceneCapture->bCaptureEveryFrame = true;
-        RightRearSceneCapture->bCaptureOnMovement = true;
-      }
+      // Always enable rear captures (will only capture when bEnableRearviewMirrors is true)
+      LeftRearSceneCapture->bCaptureEveryFrame = bEnableRearviewMirrors;
+      LeftRearSceneCapture->bCaptureOnMovement = bEnableRearviewMirrors;
+      RightRearSceneCapture->bCaptureEveryFrame = bEnableRearviewMirrors;
+      RightRearSceneCapture->bCaptureOnMovement = bEnableRearviewMirrors;
       
       CreateTripleScreenWidget();
       bInitialized = true;
@@ -639,42 +681,36 @@ void ACarlaSpectatorPawn::CreateTripleScreenWidget()
     UE_LOG(LogTemp, Log, TEXT("CarlaSpectatorPawn: Created RIGHT brush"));
   }
 
-  // Create LEFT REAR brush with UV coordinates for cropping (only if mirrors enabled)
-  if (bEnableRearviewMirrors)
+  // Create LEFT REAR brush with UV coordinates for cropping (always create, visibility controlled separately)
+  LeftRearBrush = MakeShared<FSlateBrush>();
+  if (LeftRearRenderTarget)
   {
-    LeftRearBrush = MakeShared<FSlateBrush>();
-    if (LeftRearRenderTarget)
-    {
-      LeftRearBrush->SetResourceObject(LeftRearRenderTarget);
-      LeftRearBrush->ImageSize = FVector2D(LeftRearRenderTarget->SizeX, LeftRearRenderTarget->SizeY);
-      LeftRearBrush->DrawAs = ESlateBrushDrawType::Image;
-      // Set UV coordinates to crop based on offset (mirror width 200 / render target width)
-      float MirrorWidthRatio = 200.0f / LeftRearRenderTarget->SizeX;
-      LeftRearBrush->SetUVRegion(FBox2D(
-        FVector2D(LeftMirrorCropOffset - MirrorWidthRatio * 0.5f, 0.0f),
-        FVector2D(LeftMirrorCropOffset + MirrorWidthRatio * 0.5f, 1.0f)
-      ));
-      UE_LOG(LogTemp, Log, TEXT("CarlaSpectatorPawn: Created LEFT REAR brush with crop offset %.2f"), LeftMirrorCropOffset);
-    }
+    LeftRearBrush->SetResourceObject(LeftRearRenderTarget);
+    LeftRearBrush->ImageSize = FVector2D(LeftRearRenderTarget->SizeX, LeftRearRenderTarget->SizeY);
+    LeftRearBrush->DrawAs = ESlateBrushDrawType::Image;
+    // Set UV coordinates to crop based on offset (mirror width 200 / render target width)
+    float MirrorWidthRatio = 200.0f / LeftRearRenderTarget->SizeX;
+    LeftRearBrush->SetUVRegion(FBox2D(
+      FVector2D(LeftMirrorCropOffset - MirrorWidthRatio * 0.5f, 0.0f),
+      FVector2D(LeftMirrorCropOffset + MirrorWidthRatio * 0.5f, 1.0f)
+    ));
+    UE_LOG(LogTemp, Log, TEXT("CarlaSpectatorPawn: Created LEFT REAR brush with crop offset %.2f"), LeftMirrorCropOffset);
   }
 
-  // Create RIGHT REAR brush with UV coordinates for cropping (only if mirrors enabled)
-  if (bEnableRearviewMirrors)
+  // Create RIGHT REAR brush with UV coordinates for cropping (always create, visibility controlled separately)
+  RightRearBrush = MakeShared<FSlateBrush>();
+  if (RightRearRenderTarget)
   {
-    RightRearBrush = MakeShared<FSlateBrush>();
-    if (RightRearRenderTarget)
-    {
-      RightRearBrush->SetResourceObject(RightRearRenderTarget);
-      RightRearBrush->ImageSize = FVector2D(RightRearRenderTarget->SizeX, RightRearRenderTarget->SizeY);
-      RightRearBrush->DrawAs = ESlateBrushDrawType::Image;
-      // Set UV coordinates to crop based on offset (mirror width 200 / render target width)
-      float MirrorWidthRatio = 200.0f / RightRearRenderTarget->SizeX;
-      RightRearBrush->SetUVRegion(FBox2D(
-        FVector2D(RightMirrorCropOffset - MirrorWidthRatio * 0.5f, 0.0f),
-        FVector2D(RightMirrorCropOffset + MirrorWidthRatio * 0.5f, 1.0f)
-      ));
-      UE_LOG(LogTemp, Log, TEXT("CarlaSpectatorPawn: Created RIGHT REAR brush with crop offset %.2f"), RightMirrorCropOffset);
-    }
+    RightRearBrush->SetResourceObject(RightRearRenderTarget);
+    RightRearBrush->ImageSize = FVector2D(RightRearRenderTarget->SizeX, RightRearRenderTarget->SizeY);
+    RightRearBrush->DrawAs = ESlateBrushDrawType::Image;
+    // Set UV coordinates to crop based on offset (mirror width 200 / render target width)
+    float MirrorWidthRatio = 200.0f / RightRearRenderTarget->SizeX;
+    RightRearBrush->SetUVRegion(FBox2D(
+      FVector2D(RightMirrorCropOffset - MirrorWidthRatio * 0.5f, 0.0f),
+      FVector2D(RightMirrorCropOffset + MirrorWidthRatio * 0.5f, 1.0f)
+    ));
+    UE_LOG(LogTemp, Log, TEXT("CarlaSpectatorPawn: Created RIGHT REAR brush with crop offset %.2f"), RightMirrorCropOffset);
   }
 
   // Create Slate constraint canvas with anchor-based positioning (scales dynamically)
@@ -709,7 +745,7 @@ void ACarlaSpectatorPawn::CreateTripleScreenWidget()
       .VAlign(VAlign_Top)
       .Padding(FMargin(0.0f, 20.0f, 20.0f, 0.0f))
       [
-        SNew(SBox)
+        SAssignNew(LeftMirrorWidget, SBox)
         .WidthOverride(200.0f)
         .HeightOverride(600.0f)
         .Visibility(bEnableRearviewMirrors ? EVisibility::Visible : EVisibility::Hidden)
@@ -749,7 +785,7 @@ void ACarlaSpectatorPawn::CreateTripleScreenWidget()
       .VAlign(VAlign_Top)
       .Padding(FMargin(20.0f, 20.0f, 0.0f, 0.0f))
       [
-        SNew(SBox)
+        SAssignNew(RightMirrorWidget, SBox)
         .WidthOverride(200.0f)
         .HeightOverride(600.0f)
         .Visibility(bEnableRearviewMirrors ? EVisibility::Visible : EVisibility::Hidden)
