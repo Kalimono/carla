@@ -282,31 +282,85 @@ ACarlaSpectatorPawn::ACarlaSpectatorPawn(const FObjectInitializer& ObjectInitial
   MirrorUpdateTimer = 0.0f;
 
   // Create the forward-facing camera component (CENTER SCREEN)
+  // Use UCameraComponent for native viewport rendering (much faster than render target)
   ForwardCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("ForwardCamera"));
   ForwardCamera->SetRelativeLocation(FVector(0.0f, 0.0f, 0.0f));
   ForwardCamera->SetRelativeRotation(FRotator(0.0f, 0.0f, 0.0f));
+  ForwardCamera->FieldOfView = 90.0f;  // Match side cameras FOV
+  ForwardCamera->bUsePawnControlRotation = false;
+  ForwardCamera->bAutoActivate = true;
+  ForwardCamera->bConstrainAspectRatio = false;  // Allow viewport aspect ratio
+  ForwardCamera->AspectRatio = 16.0f / 9.0f;  // Default aspect ratio
 
   // Create the left-facing scene capture component (LEFT SCREEN - 90° left)
   LeftSceneCapture = CreateDefaultSubobject<USceneCaptureComponent2D>(TEXT("LeftSceneCapture"));
   LeftSceneCapture->SetRelativeLocation(FVector(0.0f, 0.0f, 0.0f));
   LeftSceneCapture->SetRelativeRotation(FRotator(0.0f, -90.0f, 0.0f));
-  LeftSceneCapture->CaptureSource = SCS_FinalColorLDR;
+  LeftSceneCapture->CaptureSource = SCS_FinalColorLDR;  // LDR for consistent gamma
   LeftSceneCapture->bCaptureEveryFrame = false;
   LeftSceneCapture->bCaptureOnMovement = false;
   LeftSceneCapture->ShowFlags.SetMotionBlur(false);
   LeftSceneCapture->ShowFlags.SetLensFlares(false);
   LeftSceneCapture->ShowFlags.SetBloom(false);
+  LeftSceneCapture->FOVAngle = 90.0f;  // Match default camera FOV
+  LeftSceneCapture->ProjectionType = ECameraProjectionMode::Perspective;
+  LeftSceneCapture->bUseCustomProjectionMatrix = false;  // Use standard projection
+  LeftSceneCapture->OrthoWidth = 512.0f;  // Not used for perspective but set for consistency
+  // Match native viewport rendering quality
+  LeftSceneCapture->ShowFlags.SetLighting(true);
+  LeftSceneCapture->ShowFlags.SetDynamicShadows(true);
+  LeftSceneCapture->ShowFlags.SetAmbientOcclusion(true);
+  LeftSceneCapture->ShowFlags.SetPostProcessing(true);
+  LeftSceneCapture->ShowFlags.SetAntiAliasing(true);
+  LeftSceneCapture->ShowFlags.SetTemporalAA(true);
+  LeftSceneCapture->ShowFlags.SetEyeAdaptation(true);  // Enable auto-exposure
+  LeftSceneCapture->ShowFlags.SetTonemapper(true);  // Use tonemapper
+  LeftSceneCapture->bCaptureOnMovement = false;
+  LeftSceneCapture->bAlwaysPersistRenderingState = true;  // Better quality
+  // Use histogram-based auto-exposure with clamped ranges
+  LeftSceneCapture->PostProcessSettings.bOverride_AutoExposureMethod = true;
+  LeftSceneCapture->PostProcessSettings.AutoExposureMethod = AEM_Histogram;
+  LeftSceneCapture->PostProcessSettings.bOverride_AutoExposureMinBrightness = true;
+  LeftSceneCapture->PostProcessSettings.AutoExposureMinBrightness = 0.5f;
+  LeftSceneCapture->PostProcessSettings.bOverride_AutoExposureMaxBrightness = true;
+  LeftSceneCapture->PostProcessSettings.AutoExposureMaxBrightness = 2.0f;
+  LeftSceneCapture->PostProcessSettings.bOverride_AutoExposureBias = true;
+  LeftSceneCapture->PostProcessSettings.AutoExposureBias = 0.0f;
 
   // Create the right-facing scene capture component (RIGHT SCREEN - 90° right)
   RightSceneCapture = CreateDefaultSubobject<USceneCaptureComponent2D>(TEXT("RightSceneCapture"));
   RightSceneCapture->SetRelativeLocation(FVector(0.0f, 0.0f, 0.0f));
   RightSceneCapture->SetRelativeRotation(FRotator(0.0f, 90.0f, 0.0f));
-  RightSceneCapture->CaptureSource = SCS_FinalColorLDR;
+  RightSceneCapture->CaptureSource = SCS_FinalColorLDR;  // LDR for consistent gamma
   RightSceneCapture->bCaptureEveryFrame = false;
   RightSceneCapture->bCaptureOnMovement = false;
   RightSceneCapture->ShowFlags.SetMotionBlur(false);
   RightSceneCapture->ShowFlags.SetLensFlares(false);
   RightSceneCapture->ShowFlags.SetBloom(false);
+  RightSceneCapture->FOVAngle = 90.0f;  // Match default camera FOV
+  RightSceneCapture->ProjectionType = ECameraProjectionMode::Perspective;
+  RightSceneCapture->bUseCustomProjectionMatrix = false;  // Use standard projection
+  RightSceneCapture->OrthoWidth = 512.0f;  // Not used for perspective but set for consistency
+  // Match native viewport rendering quality
+  RightSceneCapture->ShowFlags.SetLighting(true);
+  RightSceneCapture->ShowFlags.SetDynamicShadows(true);
+  RightSceneCapture->ShowFlags.SetAmbientOcclusion(true);
+  RightSceneCapture->ShowFlags.SetPostProcessing(true);
+  RightSceneCapture->ShowFlags.SetAntiAliasing(true);
+  RightSceneCapture->ShowFlags.SetTemporalAA(true);
+  RightSceneCapture->ShowFlags.SetEyeAdaptation(true);  // Enable auto-exposure
+  RightSceneCapture->ShowFlags.SetTonemapper(true);  // Use tonemapper
+  RightSceneCapture->bCaptureOnMovement = false;
+  RightSceneCapture->bAlwaysPersistRenderingState = true;  // Better quality
+  // Use histogram-based auto-exposure with clamped ranges
+  RightSceneCapture->PostProcessSettings.bOverride_AutoExposureMethod = true;
+  RightSceneCapture->PostProcessSettings.AutoExposureMethod = AEM_Histogram;
+  RightSceneCapture->PostProcessSettings.bOverride_AutoExposureMinBrightness = true;
+  RightSceneCapture->PostProcessSettings.AutoExposureMinBrightness = 0.5f;
+  RightSceneCapture->PostProcessSettings.bOverride_AutoExposureMaxBrightness = true;
+  RightSceneCapture->PostProcessSettings.AutoExposureMaxBrightness = 2.0f;
+  RightSceneCapture->PostProcessSettings.bOverride_AutoExposureBias = true;
+  RightSceneCapture->PostProcessSettings.AutoExposureBias = 0.0f;
 
   // Create the engine sound audio component
   EngineCue = CreateDefaultSubobject<UAudioComponent>(TEXT("EngineCue"));
@@ -403,6 +457,15 @@ void ACarlaSpectatorPawn::BeginPlay()
     // Always attach rear scene captures so they follow the spectator (visibility controlled separately)
     LeftRearSceneCapture->AttachToComponent(Root, FAttachmentTransformRules::KeepRelativeTransform);
     RightRearSceneCapture->AttachToComponent(Root, FAttachmentTransformRules::KeepRelativeTransform);
+    
+    // Synchronize post-processing settings from camera to scene captures for consistent appearance
+    if (ForwardCamera && LeftSceneCapture && RightSceneCapture)
+    {
+      LeftSceneCapture->PostProcessSettings = ForwardCamera->PostProcessSettings;
+      LeftSceneCapture->PostProcessBlendWeight = ForwardCamera->PostProcessBlendWeight;
+      RightSceneCapture->PostProcessSettings = ForwardCamera->PostProcessSettings;
+      RightSceneCapture->PostProcessBlendWeight = ForwardCamera->PostProcessBlendWeight;
+    }
   }
   
   // Start asynchronous UDP receiver for dynamic mirror offset control (disabled for now)
@@ -570,6 +633,9 @@ void ACarlaSpectatorPawn::Tick(float DeltaTime)
     const int32 TargetWidth = 1280;  // 720p instead of 1080p
     const int32 TargetHeight = 720;
 
+    // Note: ForwardCamera uses native viewport rendering (no render target needed)
+    // This is much more efficient than rendering to a texture
+
     // Create LEFT render target
     LeftRenderTarget = NewObject<UTextureRenderTarget2D>(this, TEXT("LeftRenderTarget"));
     if (LeftRenderTarget)
@@ -626,6 +692,7 @@ void ACarlaSpectatorPawn::Tick(float DeltaTime)
     if (LeftRenderTarget && RightRenderTarget && LeftRearRenderTarget && RightRearRenderTarget)
     {
       // Enable scene captures now that render targets are ready
+      // Note: ForwardCamera uses native viewport (no capture needed)
       LeftSceneCapture->bCaptureEveryFrame = true;
       LeftSceneCapture->bCaptureOnMovement = true;
       RightSceneCapture->bCaptureEveryFrame = true;
@@ -670,6 +737,8 @@ void ACarlaSpectatorPawn::CreateTripleScreenWidget()
     LeftBrush->DrawAs = ESlateBrushDrawType::Image;
     UE_LOG(LogTemp, Log, TEXT("CarlaSpectatorPawn: Created LEFT brush"));
   }
+
+  // Note: Center screen uses native viewport (no brush needed)
 
   // Create RIGHT brush (stored as member variable)  
   RightBrush = MakeShared<FSlateBrush>();
@@ -755,6 +824,9 @@ void ACarlaSpectatorPawn::CreateTripleScreenWidget()
         ]
       ]
     ]
+    
+    // Note: Center screen (33-66%) uses native viewport rendering
+    // No widget overlay needed - native viewport shows through for best performance
     
     // RIGHT image with rear-view mirror overlay (66-100% horizontal using anchors)
     + SConstraintCanvas::Slot()

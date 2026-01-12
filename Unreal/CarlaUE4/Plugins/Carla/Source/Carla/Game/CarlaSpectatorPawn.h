@@ -114,7 +114,8 @@ public:
   
   /**
    * Forward-facing camera component (center screen - main view).
-   * This is the standard camera that the player controller uses.
+   * This is the standard camera that renders to the native viewport for optimal performance.
+   * The center third of the viewport (33-66%) shows this camera's view directly.
    */
   UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
   UCameraComponent* ForwardCamera;
@@ -219,6 +220,7 @@ private:
   /**
    * Slate brushes for left and right camera images.
    * Must persist as member variables for Slate widget lifetime.
+   * Note: Center screen uses native viewport (no brush needed).
    */
   TSharedPtr<FSlateBrush> LeftBrush;
   TSharedPtr<FSlateBrush> RightBrush;
