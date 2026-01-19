@@ -1,0 +1,61 @@
+{
+  "nDisplay": {
+    "version": "4.26",
+    "misc": {
+      "bFollowLocalPlayerCamera": true,
+      "bExitOnEsc": true
+    },
+    "scene": {
+      "xforms": {},
+      "cameras": {},
+      "screens": {}
+    },
+    "cluster": {
+      "masterNode": {
+        "id": "node_master",
+        "ports": {
+          "ClusterSync": 41001,
+          "ClusterEventsJson": 41003,
+          "ClusterEventsBinary": 41004
+        }
+      },
+      "nodes": {
+        "node_master": {
+          "host": "127.0.0.1",
+          "master": true,
+          "sound": true,
+          "fullscreen": false,
+          "window": {
+            "x": 0,
+            "y": 0,
+            "w": 5760,
+            "h": 1080
+          },
+          "viewports": {
+            "vp_left": {
+              "x": 0,
+              "y": 0,
+              "width": 1920,
+              "height": 1080,
+              "camera": ""
+            },
+            "vp_center": {
+              "x": 1920,
+              "y": 0,
+              "width": 1920,
+              "height": 1080,
+              "camera": ""
+            },
+            "vp_right": {
+              "x": 3840,
+              "y": 0,
+              "width": 1920,
+              "height": 1080,
+              "camera": ""
+            }
+          }
+        }
+      }
+    }
+  }
+}

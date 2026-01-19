@@ -115,7 +115,10 @@ public class Carla : ModuleRules
         "PhysXVehicleLib",
         "Slate",
         "SlateCore",
-        "PhysicsCore"
+        "PhysicsCore",
+        "Sockets",
+        "Networking",
+        "UMG"
         // ... add private dependencies that you statically link with here ...
       }
       );

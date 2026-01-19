@@ -93,10 +93,10 @@ cd "%PYTHON_LIB_PATH%"
 rem if exist "%PYTHON_LIB_PATH%dist" goto already_installed
 
 rem ============================================================================
-rem -- Check for py ------------------------------------------------------------
+rem -- Check for python --------------------------------------------------------
 rem ============================================================================
 
-where py 1>nul
+where python 1>nul
 if %errorlevel% neq 0 goto error_py
 
 rem Build for Python 2
@@ -109,7 +109,7 @@ rem Build for Python 3
 rem
 if %BUILD_FOR_PYTHON3%==true (
     echo Building Python API for Python 3.
-    py -3 setup.py bdist_egg bdist_wheel
+    python setup.py bdist_egg bdist_wheel
     if %errorlevel% neq 0 goto error_build_wheel
 )
 
@@ -136,11 +136,10 @@ rem ============================================================================
 
 :error_py
     echo.
-    echo %FILE_N% [ERROR] An error ocurred while executing the py.
+    echo %FILE_N% [ERROR] An error ocurred while executing python.
     echo %FILE_N% [ERROR] Possible causes:
-    echo %FILE_N% [ERROR]  - Make sure "py" is installed.
-    echo %FILE_N% [ERROR]  - py = python launcher. This utility is bundled with Python installation but not installed by default.
-    echo %FILE_N% [ERROR]  - Make sure it is available on your Windows "py".
+    echo %FILE_N% [ERROR]  - Make sure "python" is installed.
+    echo %FILE_N% [ERROR]  - Make sure it is available on your Windows PATH.
     goto bad_exit
 
 :error_build_wheel
