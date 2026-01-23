@@ -98,8 +98,12 @@ void UCarlaSettingsDelegate::ApplyQualityLevelPostRestart()
       // Set all actors with static meshes a max disntace configured in the
       // global settings for the low quality
       SetAllActorsDrawDistance(InWorld, CarlaSettings->LowStaticMeshMaxDrawDistance);
-      // Disable all post process volumes
-      SetPostProcessEffectsEnabled(InWorld, false);
+      // Disable all post process volumes (but not when using nDisplay)
+      bool bIsDisplayCluster = FParse::Param(FCommandLine::Get(), TEXT("dc_cluster"));
+      if (!bIsDisplayCluster)
+      {
+        SetPostProcessEffectsEnabled(InWorld, false);
+      }
       break;
     }
     default:
@@ -132,7 +136,14 @@ void UCarlaSettingsDelegate::ApplyQualityLevelPreRestart()
     ULocalPlayer *player = playercontroller->GetLocalPlayer();
     if (player)
     {
-      player->ViewportClient->bDisableWorldRendering = CarlaSettings->bDisableRendering;
+      // Don't disable rendering when using DisplayCluster/nDisplay
+      // as it will break the multi-viewport rendering
+      bool bIsDisplayCluster = FParse::Param(FCommandLine::Get(), TEXT("dc_cluster"));
+      
+      if (!bIsDisplayCluster)
+      {
+        player->ViewportClient->bDisableWorldRendering = CarlaSettings->bDisableRendering;
+      }
     }
     // if we already have a hud class:
     AHUD *hud = playercontroller->GetHUD();
@@ -170,6 +181,13 @@ void UCarlaSettingsDelegate::LaunchLowQualityCommands(UWorld *world) const
 {
   if (!world)
   {
+    return;
+  }
+  
+  // Check if we're running with nDisplay - skip quality downgrades that break scene captures
+  if (FParse::Param(FCommandLine::Get(), TEXT("dc_cluster")))
+  {
+    UE_LOG(LogCarla, Warning, TEXT("nDisplay cluster mode detected - skipping low quality commands to preserve nDisplay rendering"));
     return;
   }
 

@@ -1,57 +1,123 @@
 {
   "nDisplay": {
     "version": "4.26",
+
     "misc": {
       "bFollowLocalPlayerCamera": true,
       "bExitOnEsc": true
     },
+
     "scene": {
-      "xforms": {},
-      "cameras": {},
-      "screens": {}
-    },
-    "cluster": {
-      "masterNode": {
-        "id": "node_master",
-        "ports": {
-          "ClusterSync": 41001,
-          "ClusterEventsJson": 41003,
-          "ClusterEventsBinary": 41004
+      "xforms": {
+        "root": {
+          "parent": "",
+          "location": "(X=0,Y=0,Z=0)",
+          "rotation": "(P=0,Y=0,R=0)"
         }
       },
+
+      "cameras": {
+        "camera_main": {
+          "parent": "root",
+          "location": "(X=0,Y=0,Z=0)",
+          "rotation": "(P=0,Y=0,R=0)"
+        }
+      },
+
+      "screens": {
+        "screen_left": {
+          "parent": "root",
+          "size": "(X=192,Y=108)",
+          "location": "(X=120,Y=-192,Z=0)",
+          "rotation": "(P=0,Y=-90,R=0)"
+        },
+        "screen_center": {
+          "parent": "root",
+          "size": "(X=192,Y=108)",
+          "location": "(X=120,Y=0,Z=0)",
+          "rotation": "(P=0,Y=0,R=0)"
+        },
+        "screen_right": {
+          "parent": "root",
+          "size": "(X=192,Y=108)",
+          "location": "(X=120,Y=192,Z=0)",
+          "rotation": "(P=0,Y=90,R=0)"
+        }
+      }
+    },
+
+    "cluster": {
+      "masterNode": {
+        "id": "node_master"
+      },
+      
+      "sync": {
+        "renderSyncPolicy": {
+          "type": "none"
+        },
+        "inputSyncPolicy": {
+          "type": "ReplicateMaster"
+        }
+      },
+
+      "network": {
+        "ConnectRetriesAmount": "10",
+        "ConnectRetryDelay": "1000",
+        "GameStartBarrierTimeout": "30000",
+        "FrameStartBarrierTimeout": "5000",
+        "FrameEndBarrierTimeout": "5000",
+        "RenderSyncBarrierTimeout": "5000"
+      },
+
       "nodes": {
         "node_master": {
           "host": "127.0.0.1",
           "master": true,
           "sound": true,
-          "fullscreen": false,
+
           "window": {
-            "x": 0,
+            "x": -1920,
             "y": 0,
             "w": 5760,
-            "h": 1080
+            "h": 1080,
+            "fullscreen": false
           },
+
+          "postprocess": {},
+
           "viewports": {
             "vp_left": {
               "x": 0,
               "y": 0,
               "width": 1920,
               "height": 1080,
-              "camera": ""
+              "projectionPolicy": {
+                "type": "simple",
+                "screen": "screen_left",
+                "camera": "camera_main"
+              }
             },
             "vp_center": {
               "x": 1920,
               "y": 0,
               "width": 1920,
               "height": 1080,
-              "camera": ""
+              "projectionPolicy": {
+                "type": "simple",
+                "screen": "screen_center",
+                "camera": "camera_main"
+              }
             },
             "vp_right": {
               "x": 3840,
               "y": 0,
               "width": 1920,
               "height": 1080,
-              "camera": ""
+              "projectionPolicy": {
+                "type": "simple",
+                "screen": "screen_right",
+                "camera": "camera_main"
+              }
             }
           }
         }

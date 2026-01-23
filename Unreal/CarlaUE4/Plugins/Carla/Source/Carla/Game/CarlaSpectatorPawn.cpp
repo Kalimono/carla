@@ -118,11 +118,27 @@ void ACarlaSpectatorPawn::BeginPlay()
   
   UE_LOG(LogTemp, Log, TEXT("CarlaSpectatorPawn: BeginPlay called, will initialize on first tick"));
   
+  // Check if we're running with nDisplay
+  // Use the -dc_cluster command line flag which is always present in nDisplay launches
+  bool bIsDisplayCluster = FParse::Param(FCommandLine::Get(), TEXT("dc_cluster"));
+  if (bIsDisplayCluster)
+  {
+    UE_LOG(LogTemp, Warning, TEXT("CarlaSpectatorPawn: nDisplay cluster mode detected - disabling ForwardCamera to avoid viewport conflicts"));
+  }
+  
   // Attach components to root
   USceneComponent* Root = GetRootComponent();
   if (Root)
   {
     ForwardCamera->AttachToComponent(Root, FAttachmentTransformRules::KeepRelativeTransform);
+    
+    // Deactivate ForwardCamera when using nDisplay (nDisplay manages its own cameras)
+    if (bIsDisplayCluster && ForwardCamera)
+    {
+      ForwardCamera->Deactivate();
+      ForwardCamera->SetActive(false);
+      ForwardCamera->bAutoActivate = false;
+    }
     
     // Always attach rear scene captures so they follow the spectator (visibility controlled separately)
     LeftRearSceneCapture->AttachToComponent(Root, FAttachmentTransformRules::KeepRelativeTransform);

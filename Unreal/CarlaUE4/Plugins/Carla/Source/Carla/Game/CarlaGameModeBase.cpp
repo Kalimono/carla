@@ -44,6 +44,15 @@ ACarlaGameModeBase::ACarlaGameModeBase(const FObjectInitializer& ObjectInitializ
   PrimaryActorTick.TickGroup = TG_PrePhysics;
   bAllowTickBeforeBeginPlay = false;
 
+  // Check if running in nDisplay cluster mode - prevent all default pawn/spectator spawning
+  if (FParse::Param(FCommandLine::Get(), TEXT("dc_cluster")))
+  {
+    UE_LOG(LogCarla, Warning, TEXT("nDisplay cluster mode detected in constructor - disabling pawn spawning"));
+    DefaultPawnClass = nullptr;
+    SpectatorClass = nullptr;
+    bStartPlayersAsSpectators = false;
+  }
+
   Episode = CreateDefaultSubobject<UCarlaEpisode>(TEXT("Episode"));
 
   Recorder = CreateDefaultSubobject<ACarlaRecorder>(TEXT("Recorder"));
@@ -78,6 +87,15 @@ void ACarlaGameModeBase::InitGame(
     FString &ErrorMessage)
 {
   TRACE_CPUPROFILER_EVENT_SCOPE(ACarlaGameModeBase::InitGame);
+  
+  // Check if running in nDisplay cluster mode - if so, prevent default pawn spawning
+  if (FParse::Param(FCommandLine::Get(), TEXT("dc_cluster")))
+  {
+    UE_LOG(LogCarla, Warning, TEXT("nDisplay cluster mode detected - disabling default pawn spawning"));
+    DefaultPawnClass = nullptr;  // Prevent automatic pawn spawning
+    bStartPlayersAsSpectators = false;  // Don't create spectator pawns
+  }
+  
   Super::InitGame(MapName, Options, ErrorMessage);
 
   UWorld* World = GetWorld();
@@ -164,8 +182,29 @@ void ACarlaGameModeBase::InitGame(
   }
 }
 
+void ACarlaGameModeBase::HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer)
+{
+  // When running in nDisplay cluster mode, don't do any player initialization
+  if (FParse::Param(FCommandLine::Get(), TEXT("dc_cluster")))
+  {
+    UE_LOG(LogCarla, Warning, TEXT("nDisplay mode: Skipping HandleStartingNewPlayer to prevent pawn spawning"));
+    // Don't call Super - this completely bypasses the player spawning system
+    return;
+  }
+  
+  Super::HandleStartingNewPlayer_Implementation(NewPlayer);
+}
+
 void ACarlaGameModeBase::RestartPlayer(AController *NewPlayer)
 {
+  // When running in nDisplay cluster mode, don't restart/spawn any player pawn
+  // nDisplay will manage its own camera system through DisplayClusterRoot
+  if (FParse::Param(FCommandLine::Get(), TEXT("dc_cluster")))
+  {
+    UE_LOG(LogCarla, Warning, TEXT("nDisplay mode: Skipping RestartPlayer to prevent pawn spawning"));
+    return;  // Don't call Super - this prevents pawn spawning
+  }
+  
   if (CarlaSettingsDelegate != nullptr)
   {
     CarlaSettingsDelegate->ApplyQualityLevelPreRestart();

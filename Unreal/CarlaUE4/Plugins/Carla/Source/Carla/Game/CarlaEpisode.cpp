@@ -323,23 +323,15 @@ void UCarlaEpisode::InitializeAtBeginPlay()
 {
   auto World = GetWorld();
   check(World != nullptr);
-  auto PlayerController = UGameplayStatics::GetPlayerController(World, 0);
-  if (PlayerController == nullptr)
+  
+  // Check if we're running with nDisplay - if so, skip ALL Carla-specific initialization
+  // to avoid interfering with nDisplay's viewport and camera management
+  // Check for the -dc_cluster command line flag which is always present in nDisplay launches
+  if (FParse::Param(FCommandLine::Get(), TEXT("dc_cluster")))
   {
-    UE_LOG(LogCarla, Error, TEXT("Can't find player controller!"));
-    return;
-  }
-  Spectator = PlayerController->GetPawn();
-  if (Spectator != nullptr)
-  {
-    FActorDescription Description;
-    Description.Id = TEXT("spectator");
-    Description.Class = Spectator->GetClass();
-    ActorDispatcher->RegisterActor(*Spectator, Description);
-  }
-  else
-  {
-    UE_LOG(LogCarla, Error, TEXT("Can't find spectator!"));
+    UE_LOG(LogCarla, Warning, TEXT("nDisplay cluster mode detected - skipping ALL Carla episode initialization to prevent viewport interference"));
+    UE_LOG(LogCarla, Warning, TEXT("nDisplay will manage cameras and viewports through DisplayClusterRoot actor"));
+    return;  // Skip everything - let nDisplay handle it
   }
 
   // material parameters collection

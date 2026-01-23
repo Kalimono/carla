@@ -385,7 +385,13 @@ void FCarlaEngine::OnEpisodeSettingsChanged(const FEpisodeSettings &Settings)
 
   if (GEngine && GEngine->GameViewport)
   {
-    GEngine->GameViewport->bDisableWorldRendering = Settings.bNoRenderingMode;
+    // Don't disable rendering when using DisplayCluster/nDisplay
+    bool bIsDisplayCluster = FParse::Param(FCommandLine::Get(), TEXT("dc_cluster"));
+    
+    if (!bIsDisplayCluster)
+    {
+      GEngine->GameViewport->bDisableWorldRendering = Settings.bNoRenderingMode;
+    }
   }
 
   FCarlaEngine_SetFixedDeltaSeconds(Settings.FixedDeltaSeconds);

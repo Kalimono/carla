@@ -31,6 +31,10 @@
 		{
 			"Name": "ProceduralMeshComponent",
 			"Enabled": true
+		},
+		{
+			"Name": "nDisplay",
+			"Enabled": true
 		}
 	]
 }

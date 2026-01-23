@@ -117,6 +117,8 @@ protected:
   void InitGame(const FString &MapName, const FString &Options, FString &ErrorMessage) override;
 
   void RestartPlayer(AController *NewPlayer) override;
+  
+  void HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer) override;
 
   void BeginPlay() override;
 

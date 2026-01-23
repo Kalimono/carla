@@ -102,6 +102,7 @@ public class Carla : ModuleRules
         "AIModule",
         "AssetRegistry",
         "CoreUObject",
+        "DisplayCluster",
         "Engine",
         "Foliage",
         "HTTP",
