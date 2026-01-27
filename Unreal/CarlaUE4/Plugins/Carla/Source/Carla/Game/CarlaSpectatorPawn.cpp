@@ -227,7 +227,11 @@ void ACarlaSpectatorPawn::EndPlay(const EEndPlayReason::Type EndPlayReason)
  */
 void ACarlaSpectatorPawn::Tick(float DeltaTime)
 {
+  UE_LOG(LogTemp, Warning, TEXT("SPECTATOR TICK %f"), GetWorld()->GetTimeSeconds());
+
   Super::Tick(DeltaTime);
+
+  UE_LOG(LogTemp, Verbose, TEXT("CarlaSpectatorPawn: Tick - updating hero vehicle tracking"));
   
   // Update spectator position to follow hero vehicle (only after world is ready)
   if (GetWorld() && GetWorld()->HasBegunPlay())
@@ -396,7 +400,7 @@ void ACarlaSpectatorPawn::UpdateHeroVehicleTracking(float DeltaTime)
   if (!World) return;
 
   // Try to find hero vehicle if we don't have it cached
-  if (HeroVehicle == nullptr)// || !IsValid(HeroVehicle))
+  if (HeroVehicle == nullptr || !IsValid(HeroVehicle))
   {
     // Get the CARLA episode to access the actor registry
     UCarlaEpisode* Episode = UCarlaStatics::GetCurrentEpisode(World);
@@ -431,8 +435,8 @@ void ACarlaSpectatorPawn::UpdateHeroVehicleTracking(float DeltaTime)
               
               // Hide the hero vehicle entirely to prevent jitter caused by
               // Python API update lag vs C++ frame rate
-              HeroVehicle->SetActorHiddenInGame(true);
-              UE_LOG(LogTemp, Log, TEXT("CarlaSpectatorPawn: Hidden hero vehicle from game"));
+              // HeroVehicle->SetActorHiddenInGame(true);
+              // UE_LOG(LogTemp, Log, TEXT("CarlaSpectatorPawn: Hidden hero vehicle from game"));
               
               // Activate engine sound when hero vehicle is found
               if (EngineCue && !EngineCue->IsActive())
@@ -466,11 +470,13 @@ void ACarlaSpectatorPawn::UpdateHeroVehicleTracking(float DeltaTime)
   }
 
   // If we have a hero vehicle, follow it
-  if (HeroVehicle)
+  if (HeroVehicle != nullptr)
   {
+    UE_LOG(LogTemp, Verbose, TEXT("CarlaSpectatorPawn: We have a hero"));
     // Check if the vehicle is still valid (not destroyed)
     if (IsValid(HeroVehicle))
-    {
+    { 
+      UE_LOG(LogTemp, Verbose, TEXT("CarlaSpectatorPawn: Hero vehicle is valid"));
       FTransform VehicleTransform = HeroVehicle->GetActorTransform();
       
       // Apply camera offset in vehicle's local space
