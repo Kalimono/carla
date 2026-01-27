@@ -76,7 +76,7 @@ protected:
   void TryFindHero();
   void UpdateHeroVehicleTracking(float DeltaTime);
   void TryFindRootDisplayActor();
-  void TryAutoAttachToRoot();
+  // void TryAutoAttachToRoot();
   void UpdateOwnerTransform();
   void CreateMirrorCaptures();
   void CreateMirrorWidgets();

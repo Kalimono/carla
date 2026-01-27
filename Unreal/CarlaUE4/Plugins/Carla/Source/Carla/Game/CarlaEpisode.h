@@ -389,8 +389,8 @@ private:
   UPROPERTY(VisibleAnywhere)
   APawn *Spectator = nullptr;
 
-  UPROPERTY(VisibleAnywhere)
-  UHeroFollowerComponent *HeroFollowerComponent = nullptr;
+  // UPROPERTY(VisibleAnywhere)
+  // UHeroFollowerComponent *HeroFollowerComponent = nullptr;
 
   UPROPERTY(VisibleAnywhere)
   AWeather *Weather = nullptr;

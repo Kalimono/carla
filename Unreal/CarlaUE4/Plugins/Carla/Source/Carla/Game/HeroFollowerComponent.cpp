@@ -15,6 +15,7 @@
 #include "Slate/SlateTextures.h"
 #include "EngineUtils.h"
 
+
 UHeroFollowerComponent::UHeroFollowerComponent()
 {
   PrimaryComponentTick.bCanEverTick = true;
@@ -45,14 +46,14 @@ void UHeroFollowerComponent::BeginPlay()
   }
   UE_LOG(LogTemp, Log, TEXT("HeroFollower: Initialized Follower Component"));
 
-  // Try find local nDisplay root actor (if not already cached)
-  TryFindRootDisplayActor();
+  // // Try find local nDisplay root actor (if not already cached)
+  // TryFindRootDisplayActor();
 
-  // If we found a root that isn't our owner, attempt to auto-attach the component there
-  if (RootDisplayActor && !bHasAutoAttached)
-  {
-    TryAutoAttachToRoot();
-  }
+  // // If we found a root that isn't our owner, attempt to auto-attach the component there
+  // if (RootDisplayActor && !bHasAutoAttached)
+  // {
+  //   TryAutoAttachToRoot();
+  // }
 }
 
 void UHeroFollowerComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -68,10 +69,10 @@ void UHeroFollowerComponent::TickComponent(float DeltaTime, enum ELevelTick Tick
 {
   Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
-  if (!RootDisplayActor)
-  {
-    TryFindRootDisplayActor();
-  }
+  // if (!RootDisplayActor)
+  // {
+  //   TryFindRootDisplayActor();
+  // }
 
   UE_LOG(LogTemp, Verbose, TEXT("HeroFollower: Tick - updating hero vehicle tracking"));  
 
@@ -116,8 +117,14 @@ void UHeroFollowerComponent::TryFindHero()
           HeroVehicle = CarlaActor->GetActor();
           if (HeroVehicle)
           {
-            HeroVehicle->SetActorHiddenInGame(true);
+            // HeroVehicle->SetActorHiddenInGame(true);
             UE_LOG(LogTemp, Log, TEXT("HeroFollower: Found hero vehicle %s"), *HeroVehicle->GetName());
+            AActor* Owner = GetOwner();
+            if (Owner)
+            {
+              UE_LOG(LogTemp, Log, TEXT("HeroFollower: Attaching to hero vehicle"));
+              Owner->AttachToActor(HeroVehicle, FAttachmentTransformRules::KeepWorldTransform);
+            }
             break;
           }
         }
@@ -126,83 +133,83 @@ void UHeroFollowerComponent::TryFindHero()
   }
 }
 
-void UHeroFollowerComponent::TryFindRootDisplayActor()
-{
-  // If we've already found and cached the root actor, don't search again
-  if (RootDisplayActor) return;
+// void UHeroFollowerComponent::TryFindRootDisplayActor()
+// {
+//   // If we've already found and cached the root actor, don't search again
+//   if (RootDisplayActor) return;
 
-  UWorld* World = GetWorld();
-  if (!World) return;
+//   UWorld* World = GetWorld();
+//   if (!World) return;
 
-  // Look for any actor whose class name contains "DisplayCluster" or "RootCluster"
-  for (TActorIterator<AActor> It(World); It; ++It)
-  {
-    AActor* Actor = *It;
-    if (!Actor) continue;
-    FString ClassName = Actor->GetClass()->GetName();
-    if (ClassName.Contains(TEXT("DisplayCluster")) || ClassName.Contains(TEXT("RootCluster")) || ClassName.Contains(TEXT("ClusterRoot")))
-    {
-      RootDisplayActor = Actor;
-      UE_LOG(LogTemp, Log, TEXT("HeroFollower: Found nDisplay root actor: %s (class=%s)"), *Actor->GetName(), *ClassName);
-      break;
-    }
-  }
-}
+//   // Look for any actor whose class name contains "DisplayCluster" or "RootCluster"
+//   for (TActorIterator<AActor> It(World); It; ++It)
+//   {
+//     AActor* Actor = *It;
+//     if (!Actor) continue;
+//     FString ClassName = Actor->GetClass()->GetName();
+//     if (ClassName.Contains(TEXT("DisplayCluster")) || ClassName.Contains(TEXT("RootCluster")) || ClassName.Contains(TEXT("ClusterRoot")))
+//     {
+//       RootDisplayActor = Actor;
+//       UE_LOG(LogTemp, Log, TEXT("HeroFollower: Found nDisplay root actor: %s (class=%s)"), *Actor->GetName(), *ClassName);
+//       break;
+//     }
+//   }
+// }
 
-void UHeroFollowerComponent::TryAutoAttachToRoot()
-{
-  if (bHasAutoAttached) return;
-  if (!RootDisplayActor) return;
+// void UHeroFollowerComponent::TryAutoAttachToRoot()
+// {
+//   if (bHasAutoAttached) return;
+//   if (!RootDisplayActor) return;
 
-  AActor* Owner = GetOwner();
-  if (!Owner)
-  {
-    bHasAutoAttached = true;
-    return;
-  }
+//   AActor* Owner = GetOwner();
+//   if (!Owner)
+//   {
+//     bHasAutoAttached = true;
+//     return;
+//   }
 
-  // If we're already attached to the root, nothing to do
-  if (Owner == RootDisplayActor)
-  {
-    bHasAutoAttached = true;
-    return;
-  }
+//   // If we're already attached to the root, nothing to do
+//   if (Owner == RootDisplayActor)
+//   {
+//     bHasAutoAttached = true;
+//     return;
+//   }
 
-  // Create a new follower component on the RootDisplayActor and copy settings
-  UHeroFollowerComponent* NewComp = NewObject<UHeroFollowerComponent>(RootDisplayActor);
-  if (NewComp)
-  {
-    NewComp->CameraOffset = CameraOffset;
-    NewComp->bEnableRearviewMirrors = bEnableRearviewMirrors;
-    NewComp->MirrorWidth = MirrorWidth;
-    NewComp->MirrorHeight = MirrorHeight;
-    NewComp->MirrorUpdateHz = MirrorUpdateHz;
-    NewComp->bCreateWidgetOnLocalNode = bCreateWidgetOnLocalNode;
+//   // Create a new follower component on the RootDisplayActor and copy settings
+//   UHeroFollowerComponent* NewComp = NewObject<UHeroFollowerComponent>(RootDisplayActor);
+//   if (NewComp)
+//   {
+//     NewComp->CameraOffset = CameraOffset;
+//     NewComp->bEnableRearviewMirrors = bEnableRearviewMirrors;
+//     NewComp->MirrorWidth = MirrorWidth;
+//     NewComp->MirrorHeight = MirrorHeight;
+//     NewComp->MirrorUpdateHz = MirrorUpdateHz;
+//     NewComp->bCreateWidgetOnLocalNode = bCreateWidgetOnLocalNode;
 
-    // Set the discovered root on the new component and mark it as already auto-attached
-    NewComp->RootDisplayActor = RootDisplayActor;
-    NewComp->bHasAutoAttached = true;
+//     // Set the discovered root on the new component and mark it as already auto-attached
+//     NewComp->RootDisplayActor = RootDisplayActor;
+//     NewComp->bHasAutoAttached = true;
 
-    NewComp->RegisterComponent();
+//     NewComp->RegisterComponent();
 
-    // Initialize mirrors/widgets on the new component immediately if requested
-    if (NewComp->bEnableRearviewMirrors)
-    {
-      NewComp->CreateMirrorCaptures();
-      if (NewComp->ShouldCreateWidgetForThisNode())
-      {
-        NewComp->CreateMirrorWidgets();
-      }
-    }
+//     // Initialize mirrors/widgets on the new component immediately if requested
+//     if (NewComp->bEnableRearviewMirrors)
+//     {
+//       NewComp->CreateMirrorCaptures();
+//       if (NewComp->ShouldCreateWidgetForThisNode())
+//       {
+//         NewComp->CreateMirrorWidgets();
+//       }
+//     }
 
-    UE_LOG(LogTemp, Log, TEXT("HeroFollower: Auto-attached follower component to root actor %s and registered new component."), *RootDisplayActor->GetName());
+//     UE_LOG(LogTemp, Log, TEXT("HeroFollower: Auto-attached follower component to root actor %s and registered new component."), *RootDisplayActor->GetName());
 
-    // Destroy this component to avoid duplicate work
-    DestroyComponent();
-  }
+//     // Destroy this component to avoid duplicate work
+//     DestroyComponent();
+//   }
 
-  bHasAutoAttached = true;
-}
+//   bHasAutoAttached = true;
+// }
 
 void UHeroFollowerComponent::UpdateOwnerTransform()
 {
@@ -402,7 +409,7 @@ void UHeroFollowerComponent::UpdateHeroVehicleTracking(float DeltaTime)
       HeroSearchLogTimer += DeltaTime;
       if (HeroSearchLogTimer >= 1.0f)
       {
-        UE_LOG(LogTemp, Warning, TEXT("HeroFollower: No hero vehicle found in actor registry. Make sure vehicle has role_name='hero' attribute"));
+        UE_LOG(LogTemp, Warning, TEXT("HeroFollowerino: No hero vehicle found in actor registry. Make sure vehicle has role_name='hero' attribute"));
         HeroSearchLogTimer = 0.0f;
       }
     }

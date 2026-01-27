@@ -61,7 +61,7 @@ UCarlaEpisode::UCarlaEpisode(const FObjectInitializer &ObjectInitializer)
 {
   ActorDispatcher = CreateDefaultSubobject<UActorDispatcher>(TEXT("ActorDispatcher"));
   FrameData.SetEpisode(this);
-  HeroFollowerComponent = CreateDefaultSubobject<UHeroFollowerComponent>(TEXT("HeroFollowerComponent"));
+  // HeroFollowerComponent = CreateDefaultSubobject<UHeroFollowerComponent>(TEXT("HeroFollowerComponent"));
 }
 
 bool UCarlaEpisode::LoadNewEpisode(const FString &MapString, bool ResetSettings)
