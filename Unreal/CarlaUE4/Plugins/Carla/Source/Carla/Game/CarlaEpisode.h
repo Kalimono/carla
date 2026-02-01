@@ -16,8 +16,6 @@
 #include "Carla/Game/FrameData.h"
 #include "Carla/Sensor/SensorManager.h"
 
-#include "Carla/Game/HeroFollowerComponent.h"
-
 #include "GameFramework/Pawn.h"
 #include "Materials/MaterialParameterCollectionInstance.h"
 
@@ -388,9 +386,6 @@ private:
 
   UPROPERTY(VisibleAnywhere)
   APawn *Spectator = nullptr;
-
-  // UPROPERTY(VisibleAnywhere)
-  // UHeroFollowerComponent *HeroFollowerComponent = nullptr;
 
   UPROPERTY(VisibleAnywhere)
   AWeather *Weather = nullptr;

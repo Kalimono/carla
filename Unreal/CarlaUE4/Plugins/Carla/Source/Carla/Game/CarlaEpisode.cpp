@@ -21,8 +21,6 @@
 #include "Carla/Game/CarlaStaticDelegates.h"
 #include "Carla/MapGen/LargeMapManager.h"
 
-#include "Carla/Game/HeroFollowerComponent.h"
-
 #include "Engine/StaticMeshActor.h"
 #include "EngineUtils.h"
 #include "GameFramework/SpectatorPawn.h"
@@ -61,7 +59,6 @@ UCarlaEpisode::UCarlaEpisode(const FObjectInitializer &ObjectInitializer)
 {
   ActorDispatcher = CreateDefaultSubobject<UActorDispatcher>(TEXT("ActorDispatcher"));
   FrameData.SetEpisode(this);
-  // HeroFollowerComponent = CreateDefaultSubobject<UHeroFollowerComponent>(TEXT("HeroFollowerComponent"));
 }
 
 bool UCarlaEpisode::LoadNewEpisode(const FString &MapString, bool ResetSettings)

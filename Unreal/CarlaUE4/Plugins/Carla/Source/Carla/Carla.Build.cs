@@ -82,7 +82,9 @@ public class Carla : ModuleRules
         "RHI",
         "Renderer",
         "ProceduralMeshComponent",
-        "MeshDescription"
+        "MeshDescription",
+        "DisplayCluster",
+        "DisplayClusterConfiguration"
         // ... add other public dependencies that you statically link with here ...
       }
       );
