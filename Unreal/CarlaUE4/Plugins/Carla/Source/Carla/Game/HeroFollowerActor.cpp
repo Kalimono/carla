@@ -39,6 +39,19 @@ void AHeroFollowerActor::BeginPlay()
   NodeId = this->GetDcNodeId();
 
   UE_LOG(LogTemp, Log, TEXT("HeroFollower: Running on nDisplay node '%s'"), *NodeId);
+
+  // Check if this actor should be active on this node
+  if (!MasterNodeName.IsEmpty() && NodeId != MasterNodeName)
+  {
+    bIsActiveOnThisNode = false;
+    SetActorTickEnabled(false);
+    UE_LOG(LogTemp, Log, TEXT("HeroFollower: INACTIVE on node '%s' (master is '%s')"),
+      *NodeId, *MasterNodeName);
+    return;
+  }
+
+  bIsActiveOnThisNode = true;
+  UE_LOG(LogTemp, Log, TEXT("HeroFollower: ACTIVE on node '%s'"), *NodeId);
 }
 
 void AHeroFollowerActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -49,6 +62,12 @@ void AHeroFollowerActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
 void AHeroFollowerActor::Tick(float DeltaSeconds)
 {
   Super::Tick(DeltaSeconds);
+
+  // Skip all logic if not active on this node
+  if (!bIsActiveOnThisNode)
+  {
+    return;
+  }
 
   // cadence debug
   DebugTimer += DeltaSeconds;
