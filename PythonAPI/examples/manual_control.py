@@ -243,6 +243,39 @@ class World(object):
         # Keep same camera config if the camera manager exists.
         cam_index = self.camera_manager.index if self.camera_manager is not None else 0
         cam_pos_index = self.camera_manager.transform_index if self.camera_manager is not None else 0
+        
+        # First, try to find an existing hero vehicle (for nDisplay setups)
+        print("Searching for existing hero vehicle...")
+        actors = self.world.get_actors().filter('vehicle.*')
+        for actor in actors:
+            try:
+                if actor.attributes.get('role_name') == 'hero':
+                    self.player = actor
+                    print(f"Found existing hero vehicle! (ID: {actor.id})")
+                    self.show_vehicle_telemetry = False
+                    self.modify_vehicle_physics(self.player)
+                    # Set up the sensors.
+                    self.collision_sensor = CollisionSensor(self.player, self.hud)
+                    self.lane_invasion_sensor = LaneInvasionSensor(self.player, self.hud)
+                    self.gnss_sensor = GnssSensor(self.player)
+                    self.imu_sensor = IMUSensor(self.player)
+                    self.camera_manager = CameraManager(self.player, self.hud, self._gamma)
+                    self.camera_manager.transform_index = cam_pos_index
+                    self.camera_manager.set_sensor(cam_index, notify=False)
+                    actor_type = get_actor_display_name(self.player)
+                    self.hud.notification(actor_type)
+
+                    if self.sync:
+                        self.world.tick()
+                    else:
+                        self.world.wait_for_tick()
+                    return
+            except:
+                pass
+        
+        # No existing hero found, spawn a new one
+        print("No existing hero vehicle found. Spawning new one...")
+        
         # Get a random blueprint.
         blueprint_list = get_actor_blueprints(self.world, self._actor_filter, self._actor_generation)
         if not blueprint_list:

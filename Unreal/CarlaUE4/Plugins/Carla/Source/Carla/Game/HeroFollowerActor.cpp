@@ -26,7 +26,7 @@ AHeroFollowerActor::AHeroFollowerActor()
 }
 
 void AHeroFollowerActor::BeginPlay()
-{§
+{
   Super::BeginPlay();
 
   SetActorTickEnabled(true);
@@ -40,18 +40,19 @@ void AHeroFollowerActor::BeginPlay()
 
   UE_LOG(LogTemp, Log, TEXT("HeroFollower: Running on nDisplay node '%s'"), *NodeId);
 
-  // Check if this actor should be active on this node
+  // Check if this is the master node that will UPDATE the transform
   if (!MasterNodeName.IsEmpty() && NodeId != MasterNodeName)
   {
     bIsActiveOnThisNode = false;
-    SetActorTickEnabled(false);
-    UE_LOG(LogTemp, Log, TEXT("HeroFollower: INACTIVE on node '%s' (master is '%s')"),
+    // DO NOT disable tick - we need to keep checking for the hero and updating the target
+    // SetActorTickEnabled(false);  // REMOVED - slaves need to tick to sync transforms
+    UE_LOG(LogTemp, Log, TEXT("HeroFollower: SLAVE on node '%s' (master is '%s') - will sync transforms from master"),
       *NodeId, *MasterNodeName);
     return;
   }
 
   bIsActiveOnThisNode = true;
-  UE_LOG(LogTemp, Log, TEXT("HeroFollower: ACTIVE on node '%s'"), *NodeId);
+  UE_LOG(LogTemp, Log, TEXT("HeroFollower: MASTER on node '%s' - will update transforms"), *NodeId);
 }
 
 void AHeroFollowerActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -63,11 +64,9 @@ void AHeroFollowerActor::Tick(float DeltaSeconds)
 {
   Super::Tick(DeltaSeconds);
 
-  // Skip all logic if not active on this node
-  if (!bIsActiveOnThisNode)
-  {
-    return;
-  }
+  // Skip transform UPDATE logic if not master node, but continue to ensure components are found
+  // Slaves still need to find the DisplayCluster components to receive synced transforms
+  const bool bShouldUpdateTransform = bIsActiveOnThisNode;
 
   // cadence debug
   DebugTimer += DeltaSeconds;
@@ -85,6 +84,8 @@ void AHeroFollowerActor::Tick(float DeltaSeconds)
     TryFindRootDisplayActorAndTarget();
   }
 
+  // Both master and slaves should search for hero vehicle
+  // But only master updates the transform
   if (!HeroVehicle)
   {
     TryFindHero();
@@ -92,12 +93,14 @@ void AHeroFollowerActor::Tick(float DeltaSeconds)
 
   if (bDoDebug)
   {
-    UE_LOG(LogTemp, Log, TEXT("HeroFollower: Hero=%s Root=%s TargetComp=%s"),
+    UE_LOG(LogTemp, Log, TEXT("HeroFollower [%s]: Hero=%s Root=%s TargetComp=%s"),
+      bShouldUpdateTransform ? TEXT("MASTER") : TEXT("SLAVE"),
       HeroVehicle ? *HeroVehicle->GetName() : TEXT("null"),
       RootDisplayActor ? *RootDisplayActor->GetName() : TEXT("null"),
       NDisplayTargetComponent ? *NDisplayTargetComponent->GetName() : TEXT("null"));
   }
 
+  // Only master should update the transform - slaves will sync automatically via nDisplay
   if (HeroVehicle && NDisplayTargetComponent)
   {
     UpdateNDisplayTargetTransform();
@@ -105,10 +108,26 @@ void AHeroFollowerActor::Tick(float DeltaSeconds)
     if (bDoDebug)
     {
       const FTransform T = NDisplayTargetComponent->GetComponentTransform();
-      UE_LOG(LogTemp, Log, TEXT("HeroFollower: TargetComp world loc now %s rot %s"),
-        *T.GetLocation().ToString(),
-        *T.GetRotation().Rotator().ToString());
+      if (bShouldUpdateTransform)
+      {
+        UE_LOG(LogTemp, Log, TEXT("HeroFollower [MASTER]: Updated TargetComp world loc %s rot %s"),
+          *T.GetLocation().ToString(),
+          *T.GetRotation().Rotator().ToString());
+      }
+      else
+      {
+        UE_LOG(LogTemp, Log, TEXT("HeroFollower [SLAVE]: Updated TargetComp world loc %s rot %s"),
+          *T.GetLocation().ToString(),
+          *T.GetRotation().Rotator().ToString());
+      }
     }
+  }
+  else if (!bShouldUpdateTransform && NDisplayTargetComponent && bDoDebug)
+  {
+    const FTransform T = NDisplayTargetComponent->GetComponentTransform();
+    UE_LOG(LogTemp, Log, TEXT("HeroFollower [SLAVE]: No hero or target - keeping existing TargetComp world loc %s rot %s"),
+      *T.GetLocation().ToString(),
+      *T.GetRotation().Rotator().ToString());
   }
 }
 
