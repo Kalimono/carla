@@ -7,6 +7,7 @@
 #include "Carla.h"
 #include "Carla/Game/CarlaEpisode.h"
 #include "Carla/Game/CarlaStatics.h"
+#include "Carla/Game/NDisplayVehicleSyncHelper.h"
 
 #include <compiler/disable-ue4-macros.h>
 #include <carla/opendrive/OpenDriveParser.h>
@@ -437,8 +438,18 @@ TPair<EActorSpawnResultStatus, FCarlaActor*> UCarlaEpisode::SpawnActorWithInfo(
 
   // NewTransform.AddToTranslation(-1.0f * FVector(CurrentMapOrigin));
   auto result = ActorDispatcher->SpawnActor(LocalTransform, thisActorDescription, DesiredId);
-  if (result.Key == EActorSpawnResultStatus::Success && bIsPrimaryServer)
+  if (result.Key == EActorSpawnResultStatus::Success)
   {
+    if (result.Value && result.Value->GetActorType() == FCarlaActor::ActorType::Vehicle)
+    {
+      FNDisplayVehicleSyncHelper::NotifyVehicleSpawned(GetWorld(), result.Value->GetActor(), thisActorDescription);
+    }
+
+    if (!bIsPrimaryServer)
+    {
+      return result;
+    }
+
     if (Recorder->IsEnabled())
     {
       Recorder->CreateRecorderEventAdd(
@@ -459,4 +470,40 @@ TPair<EActorSpawnResultStatus, FCarlaActor*> UCarlaEpisode::SpawnActorWithInfo(
   }
 
   return result;
+}
+
+bool UCarlaEpisode::DestroyActor(AActor *Actor)
+{
+  FCarlaActor* CarlaActor = FindCarlaActor(Actor);
+  if (CarlaActor)
+  {
+    carla::rpc::ActorId ActorId = CarlaActor->GetActorId();
+    return DestroyActor(ActorId);
+  }
+  return false;
+}
+
+bool UCarlaEpisode::DestroyActor(carla::rpc::ActorId ActorId)
+{
+  if (bIsPrimaryServer)
+  {
+    GetFrameData().AddEvent(
+        CarlaRecorderEventDel{ActorId});
+  }
+  if (Recorder->IsEnabled())
+  {
+    // recorder event
+    CarlaRecorderEventDel RecEvent{ActorId};
+    Recorder->AddEvent(std::move(RecEvent));
+  }
+
+  if (FCarlaActor* CarlaActor = FindCarlaActor(ActorId))
+  {
+    if (CarlaActor->GetActorType() == FCarlaActor::ActorType::Vehicle)
+    {
+      FNDisplayVehicleSyncHelper::NotifyVehicleDestroyed(GetWorld(), CarlaActor->GetActor());
+    }
+  }
+
+  return ActorDispatcher->DestroyActor(ActorId);
 }

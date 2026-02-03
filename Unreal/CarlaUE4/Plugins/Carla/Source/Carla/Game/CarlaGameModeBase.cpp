@@ -9,6 +9,7 @@
 #include "Carla/Game/CarlaHUD.h"
 #include "Carla/Game/CarlaStatics.h"
 #include "Carla/Game/CarlaStaticDelegates.h"
+#include "Carla/Game/NDisplayVehicleSyncHelper.h"
 #include "Carla/Lights/CarlaLight.h"
 #include "Engine/DecalActor.h"
 #include "Engine/LevelStreaming.h"
@@ -219,6 +220,11 @@ void ACarlaGameModeBase::BeginPlay()
 
   UWorld* World = GetWorld();
   check(World != nullptr);
+
+  if (FParse::Param(FCommandLine::Get(), TEXT("dc_cluster")))
+  {
+    FNDisplayVehicleSyncHelper::GetOrCreateVehicleSync(World);
+  }
 
   LoadMapLayer(GameInstance->GetCurrentMapLayer());
   ReadyToRegisterObjects = true;

@@ -46,6 +46,11 @@ public:
     return *Episode;
   }
 
+  UCarlaEpisode *GetCarlaEpisodePtr() const
+  {
+    return Episode;
+  }
+
   const boost::optional<carla::road::Map>& GetMap() const {
     return Map;
   }

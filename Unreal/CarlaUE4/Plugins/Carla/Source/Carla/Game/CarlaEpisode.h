@@ -249,33 +249,9 @@ public:
 
   /// @copydoc FActorDispatcher::DestroyActor(AActor*)
   UFUNCTION(BlueprintCallable)
-  bool DestroyActor(AActor *Actor)
-  {
-    FCarlaActor* CarlaActor = FindCarlaActor(Actor);
-    if (CarlaActor)
-    {
-      carla::rpc::ActorId ActorId = CarlaActor->GetActorId();
-      return DestroyActor(ActorId);
-    }
-    return false;
-  }
+  bool DestroyActor(AActor *Actor);
 
-  bool DestroyActor(carla::rpc::ActorId ActorId)
-  {
-    if (bIsPrimaryServer)
-    {
-      GetFrameData().AddEvent(
-          CarlaRecorderEventDel{ActorId});
-    }
-    if (Recorder->IsEnabled())
-    {
-      // recorder event
-      CarlaRecorderEventDel RecEvent{ActorId};
-      Recorder->AddEvent(std::move(RecEvent));
-    }
-
-    return ActorDispatcher->DestroyActor(ActorId);
-  }
+  bool DestroyActor(carla::rpc::ActorId ActorId);
 
   void PutActorToSleep(carla::rpc::ActorId ActorId)
   {
