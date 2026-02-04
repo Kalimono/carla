@@ -10,6 +10,7 @@
 #include "Carla/Game/CarlaStatics.h"
 #include "Carla/Game/CarlaStaticDelegates.h"
 #include "Carla/Game/NDisplayVehicleSyncHelper.h"
+#include "Carla/Game/CarlaInteractiveMirror.h"
 #include "Carla/Lights/CarlaLight.h"
 #include "Engine/DecalActor.h"
 #include "Engine/LevelStreaming.h"
@@ -249,6 +250,25 @@ void ACarlaGameModeBase::BeginPlay()
 
   Episode->InitializeAtBeginPlay();
   GameInstance->NotifyBeginEpisode(*Episode);
+
+  // Spawn interactive mirror for nDisplay side views (node_1 and node_3)
+  FActorSpawnParameters SpawnParams;
+  SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+  
+  ACarlaInteractiveMirror* InteractiveMirror = World->SpawnActor<ACarlaInteractiveMirror>(
+    ACarlaInteractiveMirror::StaticClass(),
+    FVector::ZeroVector,
+    FRotator::ZeroRotator,
+    SpawnParams
+  );
+  
+  if (InteractiveMirror)
+  {
+    UE_LOG(LogCarla, Log, TEXT("CarlaGameModeBase: Spawned interactive mirror actor"));
+    InteractiveMirror->bEnableMirror = true;
+    InteractiveMirror->UDPPort = 9876;
+    InteractiveMirror->HorizontalPan = 0.5f;
+  }
 
   if (Episode->Weather != nullptr)
   {

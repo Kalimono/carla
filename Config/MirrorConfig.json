@@ -1,0 +1,30 @@
+{
+  "node_1": {
+    "scene_capture": {
+      "relative_location": [160.0, 100.0, 170.0],
+      "relative_rotation": [0.0, 180.0, 0.0],
+      "fov": 90.0
+    },
+    "overlay": {
+      "width": 300.0,
+      "height": 400.0,
+      "offset_x": 20.0,
+      "offset_y": 20.0,
+      "anchor_side": "left"
+    }
+  },
+  "node_3": {
+    "scene_capture": {
+      "relative_location": [160.0, 100.0, 170.0],
+      "relative_rotation": [0.0, 180.0, 0.0],
+      "fov": 90.0
+    },
+    "overlay": {
+      "width": 300.0,
+      "height": 400.0,
+      "offset_x": 20.0,
+      "offset_y": 20.0,
+      "anchor_side": "right"
+    }
+  }
+}

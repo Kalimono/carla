@@ -1310,7 +1310,7 @@ void UCustomTerrainPhysicsComponent::BeginPlay()
   SparseMap.SavePath = SavePath;
   // Creating the FileManager
   IPlatformFile& FileManager = FPlatformFileManager::Get().GetPlatformFile();
-  if( FileManager.CreateDirectory(*SavePath)){
+  if( FileManager.CreateDirectoryTree(*SavePath)){
     UE_LOG(LogCarla, Warning, 
         TEXT("Folder was created at %s"), *SavePath);
   }else{
