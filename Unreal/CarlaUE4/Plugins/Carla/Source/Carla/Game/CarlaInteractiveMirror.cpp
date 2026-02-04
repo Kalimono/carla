@@ -501,25 +501,48 @@ bool ACarlaInteractiveMirror::ShouldActivateOnCurrentNode() const
  */
 bool ACarlaInteractiveMirror::LoadConfigFromJSON()
 {
-  // Build full path to config file
-  FString FullPath = FPaths::ProjectDir() / ConfigFilePath;
+  // Try multiple possible paths for the config file
+  TArray<FString> PathsToTry = {
+    FPaths::ProjectDir() / ConfigFilePath,                    // Development: c:/carla/Unreal/CarlaUE4/Config/...
+    FPaths::LaunchDir() / ConfigFilePath,                      // Packaged: Build/.../CarlaUE4/Config/...
+    FPaths::ProjectDir() / TEXT("../../../") / ConfigFilePath, // Alternative: root/Config/...
+    FPaths::LaunchDir() / TEXT("../../../") / ConfigFilePath   // Alternative packaged path
+  };
   
-  // Try to load the JSON file
+  FString FullPath;
   FString JsonString;
-  if (!FFileHelper::LoadFileToString(JsonString, *FullPath))
+  bool bFileLoaded = false;
+  
+  // Try each path until we find the file
+  for (const FString& PathToTry : PathsToTry)
   {
-    UE_LOG(LogTemp, Warning, TEXT("CarlaInteractiveMirror: Could not load config file at %s, using defaults"), *FullPath);
+    FString NormalizedPath = FPaths::ConvertRelativePathToFull(PathToTry);
+    if (FFileHelper::LoadFileToString(JsonString, *NormalizedPath))
+    {
+      FullPath = NormalizedPath;
+      bFileLoaded = true;
+      break;
+    }
+  }
+  
+  if (!bFileLoaded)
+  {
+    UE_LOG(LogTemp, Warning, TEXT("CarlaInteractiveMirror: Could not load config file (tried %d paths), using defaults"), PathsToTry.Num());
     
     // Set default configuration based on node
     if (NodeName.Equals(TEXT("node_1")))
     {
-      CurrentConfig.AnchorSide = TEXT("left");
+      CurrentConfig.AnchorSide = TEXT("right");  // Left screen: mirror on right edge
       CurrentConfig.OverlayOffsetX = 20.0f;
+      CurrentConfig.RelativeLocation = FVector(160.0f, -80.0f, 170.0f);
+      CurrentConfig.RelativeRotation = FRotator(0.0f, 180.0f, 0.0f);
     }
     else if (NodeName.Equals(TEXT("node_3")))
     {
-      CurrentConfig.AnchorSide = TEXT("right");
+      CurrentConfig.AnchorSide = TEXT("left");  // Right screen: mirror on left edge
       CurrentConfig.OverlayOffsetX = 20.0f;
+      CurrentConfig.RelativeLocation = FVector(160.0f, 80.0f, 170.0f);
+      CurrentConfig.RelativeRotation = FRotator(0.0f, 180.0f, 0.0f);
     }
     
     return false;
