@@ -16,6 +16,9 @@
 #include "Dom/JsonObject.h"
 #include "CarlaInteractiveMirror.generated.h"
 
+// Forward declarations
+class SMirrorImage;
+
 /**
  * Mirror configuration structure loaded from JSON.
  */
@@ -50,6 +53,13 @@ struct FMirrorConfig
   // Anchor position: "left" or "right"
   UPROPERTY(EditAnywhere, BlueprintReadWrite)
   FString AnchorSide = TEXT("left");
+
+  // Border settings
+  UPROPERTY(EditAnywhere, BlueprintReadWrite)
+  bool bEnableBorder = true;
+
+  UPROPERTY(EditAnywhere, BlueprintReadWrite)
+  float BorderWidth = 5.0f;
 };
 
 /**
@@ -138,6 +148,13 @@ public:
    */
   UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Mirror")
   bool bEnableMirror = true;
+
+  /**
+   * Enable/disable the black border around the mirror.
+   * When enabled, draws a 5-pixel black border around the mirror overlay.
+   */
+  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Mirror")
+  bool bEnableBorder = true;
 
   /**
    * Path to JSON configuration file.
@@ -273,6 +290,11 @@ private:
    * Slate widget for displaying the mirror in the viewport.
    */
   TSharedPtr<SWidget> MirrorWidget;
+
+  /**
+   * Reference to the mirror image widget for updating pan values.
+   */
+  TSharedPtr<SMirrorImage> MirrorImageWidget;
 
   /**
    * UDP socket for receiving transform commands.

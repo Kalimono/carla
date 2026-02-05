@@ -65,20 +65,38 @@ public:
   {
     if (Brush && Brush->GetResourceObject())
     {
-      // Calculate UV coordinates based on horizontal pan
+      // Simple approach: Calculate which slice of the render target to show
       // Pan 0.0 = show left edge, Pan 1.0 = show right edge
-      const float ViewportWidth = 0.5f; // Show 50% of the render target width
-      const float UMin = FMath::Clamp(HorizontalPan - ViewportWidth * 0.5f, 0.0f, 1.0f - ViewportWidth);
-      const float UMax = UMin + ViewportWidth;
       
-      // Create custom UV coordinates for horizontal pan
-      FSlateResourceHandle ResourceHandle = FSlateApplication::Get().GetRenderer()->GetResourceHandle(*Brush);
+      const FVector2D ImageSize = Brush->ImageSize; // Render target size (e.g., 1024x768)
+      const FVector2D OverlaySize = AllottedGeometry.GetLocalSize(); // Mirror overlay size (e.g., 300x400)
       
+      // Calculate slice width as a fraction of total width
+      // If overlay is 300px and render target is 1024px, we show 300/1024 = ~0.293 of the width
+      float SliceWidthUV = (ImageSize.X > 0) ? (OverlaySize.X / ImageSize.X) : 0.3f;
+      SliceWidthUV = FMath::Clamp(SliceWidthUV, 0.1f, 1.0f);
+      
+      // Calculate horizontal position based on pan value
+      // Pan 0.0: Start at left edge (U=0.0)
+      // Pan 1.0: Start at right edge minus slice width (U=1.0-SliceWidthUV)
+      float StartU = HorizontalPan * (1.0f - SliceWidthUV);
+      StartU = FMath::Clamp(StartU, 0.0f, 1.0f - SliceWidthUV);
+      
+      // Create a brush with modified UV region
+      FSlateBrush ModifiedBrush = *Brush;
+      
+      // Set UV region: StartUV is top-left corner, SizeUV is width/height in UV space
+      ModifiedBrush.SetUVRegion(FBox2D(
+        FVector2D(StartU, 0.0f),           // Top-left UV (pan left-right, full vertical)
+        FVector2D(StartU + SliceWidthUV, 1.0f)  // Bottom-right UV
+      ));
+      
+      // Draw the image with the custom UV region
       FSlateDrawElement::MakeBox(
         OutDrawElements,
         LayerId,
         AllottedGeometry.ToPaintGeometry(),
-        Brush,
+        &ModifiedBrush,
         ESlateDrawEffect::None,
         FLinearColor::White
       );
@@ -228,6 +246,12 @@ void ACarlaInteractiveMirror::Tick(float DeltaTime)
       FVector2D TestUV = TransformDelegate.Execute(HorizontalPan, FVector2D(0.5f, 0.5f), DeltaTime);
     }
 
+    // Update the mirror widget with current pan value
+    if (MirrorImageWidget.IsValid())
+    {
+      MirrorImageWidget->SetHorizontalPan(HorizontalPan);
+    }
+
     // Trigger scene capture
     if (MirrorSceneCapture)
     {
@@ -312,9 +336,15 @@ void ACarlaInteractiveMirror::CreateMirrorWidget()
     FVector2D(0.0f, 0.0f) :  // Align to left
     FVector2D(1.0f, 0.0f);   // Align to right
 
+  // Fixed positioning logic:
+  // For left side: offset is positive from left edge
+  // For right side: offset is negative (distance from right edge)
   float OffsetX = bIsLeftSide ? 
     CurrentConfig.OverlayOffsetX : 
-    -(CurrentConfig.OverlayOffsetX + CurrentConfig.OverlayWidth);
+    -CurrentConfig.OverlayOffsetX;
+
+  // Get border width from config (use class property as override)
+  float BorderThickness = (bEnableBorder && CurrentConfig.bEnableBorder) ? CurrentConfig.BorderWidth : 0.0f;
 
   // Create slate canvas with mirror overlay
   TSharedRef<SConstraintCanvas> Canvas = SNew(SConstraintCanvas)
@@ -329,8 +359,17 @@ void ACarlaInteractiveMirror::CreateMirrorWidget()
       .HeightOverride(CurrentConfig.OverlayHeight)
       .Visibility(bEnableMirror ? EVisibility::Visible : EVisibility::Hidden)
       [
-        SNew(SImage)
-        .Image(MirrorBrush.Get())
+        // Outer border (if enabled)
+        SNew(SBorder)
+        .BorderImage(FCoreStyle::Get().GetBrush("Border"))
+        .BorderBackgroundColor(FLinearColor::Black)
+        .Padding(FMargin(BorderThickness))
+        [
+          // Inner mirror image with UV-based slice rendering
+          SAssignNew(MirrorImageWidget, SMirrorImage)
+          .Brush(MirrorBrush.Get())
+          .HorizontalPan(HorizontalPan)
+        ]
       ]
     ];
 
@@ -632,9 +671,20 @@ bool ACarlaInteractiveMirror::LoadConfigFromJSON()
     {
       CurrentConfig.AnchorSide = OverlayObj->GetStringField(TEXT("anchor_side"));
     }
+
+    if (OverlayObj->HasField(TEXT("enable_border")))
+    {
+      CurrentConfig.bEnableBorder = OverlayObj->GetBoolField(TEXT("enable_border"));
+    }
+
+    if (OverlayObj->HasField(TEXT("border_width")))
+    {
+      CurrentConfig.BorderWidth = OverlayObj->GetNumberField(TEXT("border_width"));
+    }
   }
   
-  UE_LOG(LogTemp, Log, TEXT("CarlaInteractiveMirror: Loaded configuration for node '%s'"), *NodeName);
+  UE_LOG(LogTemp, Log, TEXT("CarlaInteractiveMirror: Loaded configuration for node '%s' - Border: %s (%.0fpx)"), 
+    *NodeName, CurrentConfig.bEnableBorder ? TEXT("enabled") : TEXT("disabled"), CurrentConfig.BorderWidth);
   return true;
 }
 

@@ -10,7 +10,9 @@
       "height": 400.0,
       "offset_x": 20.0,
       "offset_y": 20.0,
-      "anchor_side": "right"
+      "anchor_side": "right",
+      "enable_border": true,
+      "border_width": 5.0
     }
   },
   "node_3": {
@@ -24,7 +26,9 @@
       "height": 400.0,
       "offset_x": 20.0,
       "offset_y": 20.0,
-      "anchor_side": "left"
+      "anchor_side": "left",
+      "enable_border": true,
+      "border_width": 5.0
     }
   }
 }

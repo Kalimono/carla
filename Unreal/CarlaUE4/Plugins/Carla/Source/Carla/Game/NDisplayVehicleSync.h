@@ -47,6 +47,9 @@ struct FNDisplayVehicleSpawnData
   int32 ActorId;
 
   UPROPERTY()
+  uint32 ActorUId;
+
+  UPROPERTY()
   FTransform SpawnTransform;
 
   UPROPERTY()

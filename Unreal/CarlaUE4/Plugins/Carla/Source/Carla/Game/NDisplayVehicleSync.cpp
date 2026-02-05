@@ -262,6 +262,7 @@ void ANDisplayVehicleSync::OnVehicleSpawned(AActor* SpawnedVehicle, FActorDescri
   // Create spawn data
   FNDisplayVehicleSpawnData SpawnData;
   SpawnData.ActorId = ActorId;
+  SpawnData.ActorUId = ActorDescription.UId;
   SpawnData.SpawnTransform = SpawnedVehicle->GetActorTransform();
   SpawnData.ActorTypeName = ActorDescription.Id;
 
@@ -276,8 +277,8 @@ void ANDisplayVehicleSync::OnVehicleSpawned(AActor* SpawnedVehicle, FActorDescri
 
   if (bDebugLoggingEnabled)
   {
-    UE_LOG(LogTemp, Log, TEXT("NDisplayVehicleSync: Vehicle spawned on master - ID=%d, Type=%s"),
-      ActorId, *SpawnData.ActorTypeName);
+    UE_LOG(LogTemp, Log, TEXT("NDisplayVehicleSync: Vehicle spawned on master - ID=%d, UId=%d, Type=%s"),
+      ActorId, SpawnData.ActorUId, *SpawnData.ActorTypeName);
   }
 
   // Broadcast to slave nodes
@@ -340,14 +341,14 @@ void ANDisplayVehicleSync::ReceiveVehicleSpawnEvent(FNDisplayVehicleSpawnData Sp
 
     if (bDebugLoggingEnabled)
     {
-      UE_LOG(LogTemp, Log, TEXT("NDisplayVehicleSync: Vehicle replica created on slave - ID=%d, Type=%s"),
-        SpawnData.ActorId, *SpawnData.ActorTypeName);
+      UE_LOG(LogTemp, Log, TEXT("NDisplayVehicleSync: Vehicle replica created on slave - ID=%d, UId=%d, Type=%s"),
+        SpawnData.ActorId, SpawnData.ActorUId, *SpawnData.ActorTypeName);
     }
   }
   else
   {
-    UE_LOG(LogTemp, Warning, TEXT("NDisplayVehicleSync: Failed to create vehicle replica - ID=%d"),
-      SpawnData.ActorId);
+    UE_LOG(LogTemp, Warning, TEXT("NDisplayVehicleSync: Failed to create vehicle replica - ID=%d, UId=%d, Type=%s"),
+      SpawnData.ActorId, SpawnData.ActorUId, *SpawnData.ActorTypeName);
   }
 }
 
@@ -715,6 +716,7 @@ AActor* ANDisplayVehicleSync::CreateVehicleReplica(const FNDisplayVehicleSpawnDa
   // Create actor description from spawn data
   FActorDescription ActorDesc;
   ActorDesc.Id = SpawnData.ActorTypeName;
+  ActorDesc.UId = SpawnData.ActorUId;
 
   for (const auto& Attr : SpawnData.Attributes)
   {
