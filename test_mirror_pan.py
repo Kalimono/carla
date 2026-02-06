@@ -39,9 +39,9 @@ def main():
             frame_start = time.time()
             
             # Calculate pan value using sine wave for smooth bouncing
-            # This creates a value that oscillates between 0.0 and 1.0
+            # Starts at 0.0, bounces to 1.0, then back to 0.0
             elapsed = time.time() - start_time
-            pan_value = (math.sin(elapsed * BOUNCE_SPEED) + 1.0) / 2.0
+            pan_value = (math.sin(elapsed * BOUNCE_SPEED - math.pi/2) + 1.0) / 2.0
             
             # Send the command
             send_pan_command(sock, pan_value)

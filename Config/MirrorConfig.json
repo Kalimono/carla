@@ -2,7 +2,7 @@
   "node_1": {
     "scene_capture": {
       "relative_location": [160.0, -80.0, 170.0],
-      "relative_rotation": [0.0, 180.0, 0.0],
+      "relative_rotation": [0.0, -90.0, 0.0],
       "fov": 90.0
     },
     "overlay": {
@@ -18,7 +18,7 @@
   "node_3": {
     "scene_capture": {
       "relative_location": [160.0, 80.0, 170.0],
-      "relative_rotation": [0.0, 180.0, 0.0],
+      "relative_rotation": [0.0, 90.0, 0.0],
       "fov": 90.0
     },
     "overlay": {

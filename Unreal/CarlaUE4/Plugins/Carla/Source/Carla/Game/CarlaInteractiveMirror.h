@@ -183,11 +183,13 @@ public:
   int32 MirrorHeight = 768;
 
   /**
-   * Current horizontal pan value (0.0 = left edge, 1.0 = right edge).
+   * Current horizontal pan value (0.0 to 1.0).
+   * Left mirror: 0.0 = far right edge, 1.0 = far left edge
+   * Right mirror: 0.0 = far left edge, 1.0 = far right edge
    * This is updated via UDP and controls which slice of the render target is displayed.
    */
   UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Mirror|Transform")
-  float HorizontalPan = 0.5f;
+  float HorizontalPan = 0.0f;
 
   /**
    * Mirror update rate in Hz (0 = every frame).

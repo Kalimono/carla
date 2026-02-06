@@ -40,12 +40,14 @@ public:
   SLATE_BEGIN_ARGS(SMirrorImage) {}
     SLATE_ARGUMENT(const FSlateBrush*, Brush)
     SLATE_ARGUMENT(float, HorizontalPan)
+    SLATE_ARGUMENT(bool, bIsLeftSide)  // True for left mirror, false for right
   SLATE_END_ARGS()
 
   void Construct(const FArguments& InArgs)
   {
     Brush = InArgs._Brush;
     HorizontalPan = InArgs._HorizontalPan;
+    bIsLeftSide = InArgs._bIsLeftSide;
 
     ChildSlot
     [
@@ -57,6 +59,7 @@ public:
   void SetHorizontalPan(float NewPan)
   {
     HorizontalPan = FMath::Clamp(NewPan, 0.0f, 1.0f);
+    Invalidate(EInvalidateWidgetReason::Paint);
   }
 
   virtual int32 OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, 
@@ -66,7 +69,8 @@ public:
     if (Brush && Brush->GetResourceObject())
     {
       // Simple approach: Calculate which slice of the render target to show
-      // Pan 0.0 = show left edge, Pan 1.0 = show right edge
+      // Left mirror: Pan 0.0 = show RIGHT edge, Pan 1.0 = show LEFT edge
+      // Right mirror: Pan 0.0 = show LEFT edge, Pan 1.0 = show RIGHT edge
       
       const FVector2D ImageSize = Brush->ImageSize; // Render target size (e.g., 1024x768)
       const FVector2D OverlaySize = AllottedGeometry.GetLocalSize(); // Mirror overlay size (e.g., 300x400)
@@ -76,10 +80,18 @@ public:
       float SliceWidthUV = (ImageSize.X > 0) ? (OverlaySize.X / ImageSize.X) : 0.3f;
       SliceWidthUV = FMath::Clamp(SliceWidthUV, 0.1f, 1.0f);
       
-      // Calculate horizontal position based on pan value
-      // Pan 0.0: Start at left edge (U=0.0)
-      // Pan 1.0: Start at right edge minus slice width (U=1.0-SliceWidthUV)
-      float StartU = HorizontalPan * (1.0f - SliceWidthUV);
+      // Calculate horizontal position based on pan value and mirror side
+      float StartU;
+      if (bIsLeftSide)
+      {
+        // Left mirror: Inverted pan (0=far right, 1=far left)
+        StartU = (1.0f - HorizontalPan) * (1.0f - SliceWidthUV);
+      }
+      else
+      {
+        // Right mirror: Normal pan (0=far left, 1=far right)
+        StartU = HorizontalPan * (1.0f - SliceWidthUV);
+      }
       StartU = FMath::Clamp(StartU, 0.0f, 1.0f - SliceWidthUV);
       
       // Create a brush with modified UV region
@@ -110,6 +122,7 @@ public:
 private:
   const FSlateBrush* Brush;
   float HorizontalPan;
+  bool bIsLeftSide;
 };
 
 // =====================================================
@@ -369,6 +382,7 @@ void ACarlaInteractiveMirror::CreateMirrorWidget()
           SAssignNew(MirrorImageWidget, SMirrorImage)
           .Brush(MirrorBrush.Get())
           .HorizontalPan(HorizontalPan)
+          .bIsLeftSide(bIsLeftSide)
         ]
       ]
     ];
@@ -376,6 +390,14 @@ void ACarlaInteractiveMirror::CreateMirrorWidget()
   ViewportClient->AddViewportWidgetContent(Canvas, 0);
   UE_LOG(LogTemp, Log, TEXT("CarlaInteractiveMirror: Mirror widget added to viewport at %s side"), 
     bIsLeftSide ? TEXT("left") : TEXT("right"));
+  
+  // Initialize the widget with current pan value and force a redraw
+  if (MirrorImageWidget.IsValid())
+  {
+    MirrorImageWidget->SetHorizontalPan(HorizontalPan);
+    MirrorImageWidget->Invalidate(EInvalidateWidgetReason::Paint);
+    UE_LOG(LogTemp, Warning, TEXT("CarlaInteractiveMirror: Initial HorizontalPan set to %.3f"), HorizontalPan);
+  }
 }
 
 /**
@@ -574,14 +596,14 @@ bool ACarlaInteractiveMirror::LoadConfigFromJSON()
       CurrentConfig.AnchorSide = TEXT("right");  // Left screen: mirror on right edge
       CurrentConfig.OverlayOffsetX = 20.0f;
       CurrentConfig.RelativeLocation = FVector(160.0f, -80.0f, 170.0f);
-      CurrentConfig.RelativeRotation = FRotator(0.0f, 180.0f, 0.0f);
+      CurrentConfig.RelativeRotation = FRotator(0.0f, -90.0f, 0.0f);  // Look left
     }
     else if (NodeName.Equals(TEXT("node_3")))
     {
       CurrentConfig.AnchorSide = TEXT("left");  // Right screen: mirror on left edge
       CurrentConfig.OverlayOffsetX = 20.0f;
       CurrentConfig.RelativeLocation = FVector(160.0f, 80.0f, 170.0f);
-      CurrentConfig.RelativeRotation = FRotator(0.0f, 180.0f, 0.0f);
+      CurrentConfig.RelativeRotation = FRotator(0.0f, 90.0f, 0.0f);  // Look right
     }
     
     return false;
@@ -772,6 +794,14 @@ void ACarlaInteractiveMirror::UpdateHeroVehicleTracking(float DeltaTime)
                 // NOW set the configured transform (relative to hero vehicle)
                 MirrorSceneCapture->SetRelativeLocation(CurrentConfig.RelativeLocation);
                 MirrorSceneCapture->SetRelativeRotation(CurrentConfig.RelativeRotation);
+                
+                // Reset pan to 0.0 when attaching to hero vehicle
+                HorizontalPan = 0.0f;
+                if (MirrorImageWidget.IsValid())
+                {
+                  MirrorImageWidget->SetHorizontalPan(HorizontalPan);
+                  UE_LOG(LogTemp, Log, TEXT("CarlaInteractiveMirror: Reset HorizontalPan to 0.0 on hero attach"));
+                }
                 
                 UE_LOG(LogTemp, Warning, TEXT("CarlaInteractiveMirror: Attached to hero - Relative Loc: (%.1f, %.1f, %.1f) World Loc: %s"),
                   CurrentConfig.RelativeLocation.X, CurrentConfig.RelativeLocation.Y, CurrentConfig.RelativeLocation.Z,
