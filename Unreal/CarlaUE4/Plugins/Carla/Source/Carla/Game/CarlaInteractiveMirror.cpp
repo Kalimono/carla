@@ -187,7 +187,7 @@ public:
           FLinearColor::White
         );
       }
-      else // EMirrorMode::ZoomOutProper
+      else if (Mode == EMirrorMode::ZoomOutProper)
       {
         // ZOOM OUT PROPER MODE: Show more of the capture while staying edge-aligned
         // At pan=0.0: Show same edge-aligned view as pan mode
@@ -252,6 +252,99 @@ public:
           OutDrawElements,
           LayerId,
           AllottedGeometry.ToPaintGeometry(),
+          &ModifiedBrush,
+          ESlateDrawEffect::None,
+          FLinearColor::White
+        );
+      }
+      else // EMirrorMode::ZoomOutBorder
+      {
+        // ZOOM OUT BORDER MODE: Show more width with letterboxing when height maxes out
+        // At pan=0.0: Show same edge-aligned view as zoomout_proper
+        // As pan increases: Zoom out until height = 100%, then add letterboxing and continue width
+        
+        // Calculate zoom factor (0.0 = zoomed in, 1.0 = fully zoomed out)
+        float ZoomFactor = HorizontalPan;
+        
+        // Base slice size (at zoom=0)
+        float BaseSliceWidthUV = (ImageSize.X > 0) ? (OverlaySize.X / ImageSize.X) : 0.3f;
+        BaseSliceWidthUV = FMath::Clamp(BaseSliceWidthUV, 0.1f, 1.0f);
+        
+        // Calculate what width would give us at this zoom level
+        float DesiredSliceWidthUV = FMath::Lerp(BaseSliceWidthUV, 1.0f, ZoomFactor);
+        
+        // Calculate corresponding height based on aspect ratio
+        float CorrespondingHeightUV = (DesiredSliceWidthUV * ImageSize.X) / (ImageSize.Y * OverlayAspect);
+        
+        float CurrentSliceWidthUV;
+        float CurrentSliceHeightUV;
+        float RenderHeightFraction = 1.0f; // How much of overlay height to use for image (rest is letterbox)
+        
+        if (CorrespondingHeightUV <= 1.0f)
+        {
+          // Normal case: Height fits within capture
+          CurrentSliceWidthUV = DesiredSliceWidthUV;
+          CurrentSliceHeightUV = CorrespondingHeightUV;
+        }
+        else
+        {
+          // Height would exceed capture - clamp height and add letterboxing
+          CurrentSliceHeightUV = 1.0f; // Use full capture height
+          
+          // Keep increasing width beyond what aspect ratio would normally allow
+          CurrentSliceWidthUV = DesiredSliceWidthUV;
+          
+          // Calculate how much of the overlay height the image should occupy
+          // to maintain aspect ratio with the current width
+          RenderHeightFraction = (CurrentSliceHeightUV * ImageSize.Y * OverlayAspect) / (CurrentSliceWidthUV * ImageSize.X);
+          RenderHeightFraction = FMath::Clamp(RenderHeightFraction, 0.1f, 1.0f);
+        }
+        
+        // Position: Always edge-aligned (never moves toward center)
+        float StartU;
+        if (bIsLeftSide)
+        {
+          // Left mirror: Always aligned to right edge
+          StartU = 1.0f - CurrentSliceWidthUV;
+        }
+        else
+        {
+          // Right mirror: Always aligned to left edge
+          StartU = 0.0f;
+        }
+        
+        float StartV = (1.0f - CurrentSliceHeightUV) * 0.5f;
+        
+        // Draw black background for letterboxing
+        if (RenderHeightFraction < 1.0f)
+        {
+          FSlateDrawElement::MakeBox(
+            OutDrawElements,
+            LayerId,
+            AllottedGeometry.ToPaintGeometry(),
+            FCoreStyle::Get().GetBrush("WhiteBrush"),
+            ESlateDrawEffect::None,
+            FLinearColor::Black
+          );
+          LayerId++;
+        }
+        
+        // Create modified geometry for the image portion (excluding letterbox)
+        FPaintGeometry ImageGeometry = AllottedGeometry.ToPaintGeometry(
+          FVector2D(0.0f, OverlaySize.Y * (1.0f - RenderHeightFraction) * 0.5f), // Offset Y by letterbox
+          FVector2D(OverlaySize.X, OverlaySize.Y * RenderHeightFraction)          // Scale height
+        );
+        
+        FSlateBrush ModifiedBrush = *Brush;
+        ModifiedBrush.SetUVRegion(FBox2D(
+          FVector2D(StartU, StartV),
+          FVector2D(StartU + CurrentSliceWidthUV, StartV + CurrentSliceHeightUV)
+        ));
+        
+        FSlateDrawElement::MakeBox(
+          OutDrawElements,
+          LayerId,
+          ImageGeometry,
           &ModifiedBrush,
           ESlateDrawEffect::None,
           FLinearColor::White
@@ -698,9 +791,14 @@ void ACarlaInteractiveMirror::SetMirrorMode(int32 Mode)
     MirrorMode = EMirrorMode::ZoomOutProper;
     UE_LOG(LogTemp, Log, TEXT("CarlaInteractiveMirror: Switched to ZoomOutProper mode"));
   }
+  else if (Mode == 3)
+  {
+    MirrorMode = EMirrorMode::ZoomOutBorder;
+    UE_LOG(LogTemp, Log, TEXT("CarlaInteractiveMirror: Switched to ZoomOutBorder mode"));
+  }
   else
   {
-    UE_LOG(LogTemp, Warning, TEXT("CarlaInteractiveMirror: Invalid mode %d (use 0=Pan, 1=ZoomOut, 2=ZoomOutProper)"), Mode);
+    UE_LOG(LogTemp, Warning, TEXT("CarlaInteractiveMirror: Invalid mode %d (use 0=Pan, 1=ZoomOut, 2=ZoomOutProper, 3=ZoomOutBorder)"), Mode);
   }
 }
 
@@ -896,6 +994,10 @@ bool ACarlaInteractiveMirror::LoadConfigFromJSON()
       {
         CurrentConfig.Mode = EMirrorMode::ZoomOutProper;
       }
+      else if (ModeString.Equals(TEXT("zoomout_border"), ESearchCase::IgnoreCase))
+      {
+        CurrentConfig.Mode = EMirrorMode::ZoomOutBorder;
+      }
       else
       {
         CurrentConfig.Mode = EMirrorMode::Pan;
@@ -911,6 +1013,10 @@ bool ACarlaInteractiveMirror::LoadConfigFromJSON()
   else if (CurrentConfig.Mode == EMirrorMode::ZoomOutProper)
   {
     ModeName = TEXT("ZoomOutProper");
+  }
+  else if (CurrentConfig.Mode == EMirrorMode::ZoomOutBorder)
+  {
+    ModeName = TEXT("ZoomOutBorder");
   }
   
   UE_LOG(LogTemp, Log, TEXT("CarlaInteractiveMirror: Loaded configuration for node '%s' - Border: %s (%.0fpx), Mode: %s"), 
@@ -1017,6 +1123,7 @@ void ACarlaInteractiveMirror::UpdateHeroVehicleTracking(float DeltaTime)
                   FString ModeName = TEXT("Pan");
                   if (MirrorMode == EMirrorMode::ZoomOut) ModeName = TEXT("ZoomOut");
                   else if (MirrorMode == EMirrorMode::ZoomOutProper) ModeName = TEXT("ZoomOutProper");
+                  else if (MirrorMode == EMirrorMode::ZoomOutBorder) ModeName = TEXT("ZoomOutBorder");
                   
                   UE_LOG(LogTemp, Log, TEXT("CarlaInteractiveMirror: Reset HorizontalPan to 0.0 on hero attach (Mode: %s)"), *ModeName);
                 }

@@ -27,7 +27,8 @@ enum class EMirrorMode : uint8
 {
   Pan           UMETA(DisplayName = "Pan Mode"),           // Slide a fixed-size slice horizontally
   ZoomOut       UMETA(DisplayName = "Zoom Out Mode"),      // Zoom out and pan toward center
-  ZoomOutProper UMETA(DisplayName = "Zoom Out Proper")     // Zoom out while staying edge-aligned
+  ZoomOutProper UMETA(DisplayName = "Zoom Out Proper"),    // Zoom out while staying edge-aligned
+  ZoomOutBorder UMETA(DisplayName = "Zoom Out Border")     // Zoom out with letterboxing to show more width
 };
 
 /**
