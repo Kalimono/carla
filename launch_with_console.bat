@@ -1,0 +1,4 @@
+@echo off
+REM Launch CARLA with console enabled
+
+"C:\carla\Build\UE4Carla\0.9.15.2-11-gbf960db8c-dirty\WindowsNoEditor\CarlaUE4.exe" -messaging -dc_cluster -dc_dev_input -nosplash -fixedseed -NoVerifyGC -noxrstereo -RemoteControlIsHeadless -StageFriendlyName=node_1 -dc_cfg="C:\Users\Smarteye\Documents\wall_curved_3x1_large_multi_single.cfg" -dx12 -dc_dev_mono -dc_node=node_1 Log=node_1.log -ini:Engine:[/Script/Engine.Engine]:GameEngine=/Script/DisplayCluster.DisplayClusterGameEngine,[/Script/Engine.Engine]:GameViewportClientClassName=/Script/DisplayCluster.DisplayClusterViewportClient -ini:Game:[/Script/EngineSettings.GeneralProjectSettings]:bUseBorderlessWindow=True -ExecCmds="DisableAllScreenMessages, sg.ResolutionQuality 100, sg.ViewDistanceQuality 0, sg.ShadowQuality 0, sg.PostProcessQuality 0, sg.TextureQuality 0, sg.EffectsQuality 0, sg.FoliageQuality 0, sg.AntiAliasingQuality 0, EnableCheats" -fullscreen -log

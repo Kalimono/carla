@@ -149,23 +149,22 @@ class World(object):
         self.restart()
 
     def restart(self):
-        # Get a random blueprint
-        blueprint_list = get_actor_blueprints(self.world, self._actor_filter, self._actor_generation)
-        if not blueprint_list:
-            raise ValueError("Couldn't find any vehicles with filter '{}' generation '{}'".format(
-                self._actor_filter, self._actor_generation))
-        
-        blueprint = random.choice(blueprint_list)
+        # Always use the Lincoln MKZ 2020 blueprint (deterministic spawn)
+        bps = self.world.get_blueprint_library().filter('vehicle.lincoln.mkz_2020')
+        if not bps:
+            raise ValueError("Couldn't find vehicle.lincoln.mkz_2020 blueprint in the library.")
+        blueprint = bps[0]
         blueprint.set_attribute('role_name', self.actor_role_name)
-        
+
+        # Use the first recommended values (deterministic) where available
         if blueprint.has_attribute('color'):
-            color = random.choice(blueprint.get_attribute('color').recommended_values)
+            color = blueprint.get_attribute('color').recommended_values[0]
             blueprint.set_attribute('color', color)
-        
+
         if blueprint.has_attribute('driver_id'):
-            driver_id = random.choice(blueprint.get_attribute('driver_id').recommended_values)
+            driver_id = blueprint.get_attribute('driver_id').recommended_values[0]
             blueprint.set_attribute('driver_id', driver_id)
-        
+
         if blueprint.has_attribute('is_invincible'):
             blueprint.set_attribute('is_invincible', 'true')
         

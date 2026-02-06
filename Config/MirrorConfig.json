@@ -12,7 +12,8 @@
       "offset_y": 20.0,
       "anchor_side": "right",
       "enable_border": true,
-      "border_width": 5.0
+      "border_width": 5.0,
+      "mode": "pan"
     }
   },
   "node_3": {
@@ -28,7 +29,8 @@
       "offset_y": 20.0,
       "anchor_side": "left",
       "enable_border": true,
-      "border_width": 5.0
+      "border_width": 5.0,
+      "mode": "pan"
     }
   }
 }

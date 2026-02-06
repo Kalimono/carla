@@ -41,6 +41,7 @@ public:
     SLATE_ARGUMENT(const FSlateBrush*, Brush)
     SLATE_ARGUMENT(float, HorizontalPan)
     SLATE_ARGUMENT(bool, bIsLeftSide)  // True for left mirror, false for right
+    SLATE_ARGUMENT(EMirrorMode, Mode)  // Pan or ZoomOut mode
   SLATE_END_ARGS()
 
   void Construct(const FArguments& InArgs)
@@ -48,6 +49,7 @@ public:
     Brush = InArgs._Brush;
     HorizontalPan = InArgs._HorizontalPan;
     bIsLeftSide = InArgs._bIsLeftSide;
+    Mode = InArgs._Mode;
 
     ChildSlot
     [
@@ -62,56 +64,199 @@ public:
     Invalidate(EInvalidateWidgetReason::Paint);
   }
 
+  void SetMode(EMirrorMode NewMode)
+  {
+    Mode = NewMode;
+    Invalidate(EInvalidateWidgetReason::Paint);
+  }
+
   virtual int32 OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, 
     const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, 
     int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const override
   {
     if (Brush && Brush->GetResourceObject())
     {
-      // Simple approach: Calculate which slice of the render target to show
-      // Left mirror: Pan 0.0 = show RIGHT edge, Pan 1.0 = show LEFT edge
-      // Right mirror: Pan 0.0 = show LEFT edge, Pan 1.0 = show RIGHT edge
-      
       const FVector2D ImageSize = Brush->ImageSize; // Render target size (e.g., 1024x768)
       const FVector2D OverlaySize = AllottedGeometry.GetLocalSize(); // Mirror overlay size (e.g., 300x400)
+      const float OverlayAspect = OverlaySize.X / OverlaySize.Y; // e.g., 300/400 = 0.75
+      const float ImageAspect = ImageSize.X / ImageSize.Y; // e.g., 1024/768 = 1.33
       
-      // Calculate slice width as a fraction of total width
-      // If overlay is 300px and render target is 1024px, we show 300/1024 = ~0.293 of the width
-      float SliceWidthUV = (ImageSize.X > 0) ? (OverlaySize.X / ImageSize.X) : 0.3f;
-      SliceWidthUV = FMath::Clamp(SliceWidthUV, 0.1f, 1.0f);
-      
-      // Calculate horizontal position based on pan value and mirror side
-      float StartU;
-      if (bIsLeftSide)
+      if (Mode == EMirrorMode::Pan)
       {
-        // Left mirror: Inverted pan (0=far right, 1=far left)
-        StartU = (1.0f - HorizontalPan) * (1.0f - SliceWidthUV);
+        // PAN MODE: Slide a fixed-size slice horizontally
+        float SliceWidthUV = (ImageSize.X > 0) ? (OverlaySize.X / ImageSize.X) : 0.3f;
+        SliceWidthUV = FMath::Clamp(SliceWidthUV, 0.1f, 1.0f);
+        
+        float StartU;
+        if (bIsLeftSide)
+        {
+          StartU = (1.0f - HorizontalPan) * (1.0f - SliceWidthUV);
+        }
+        else
+        {
+          StartU = HorizontalPan * (1.0f - SliceWidthUV);
+        }
+        StartU = FMath::Clamp(StartU, 0.0f, 1.0f - SliceWidthUV);
+        
+        FSlateBrush ModifiedBrush = *Brush;
+        ModifiedBrush.SetUVRegion(FBox2D(
+          FVector2D(StartU, 0.0f),
+          FVector2D(StartU + SliceWidthUV, 1.0f)
+        ));
+        
+        FSlateDrawElement::MakeBox(
+          OutDrawElements,
+          LayerId,
+          AllottedGeometry.ToPaintGeometry(),
+          &ModifiedBrush,
+          ESlateDrawEffect::None,
+          FLinearColor::White
+        );
       }
-      else
+      else if (Mode == EMirrorMode::ZoomOut)
       {
-        // Right mirror: Normal pan (0=far left, 1=far right)
-        StartU = HorizontalPan * (1.0f - SliceWidthUV);
+        // ZOOM OUT MODE: Show more of the capture as pan increases
+        // At pan=0.0: Show same edge-aligned view as pan mode
+        // At pan=1.0: Show as much as possible, centered
+        
+        // Calculate zoom factor (0.0 = zoomed in, 1.0 = zoomed out)
+        float ZoomFactor = HorizontalPan;
+        
+        // Base slice size (at zoom=0)
+        float BaseSliceWidthUV = (ImageSize.X > 0) ? (OverlaySize.X / ImageSize.X) : 0.3f;
+        BaseSliceWidthUV = FMath::Clamp(BaseSliceWidthUV, 0.1f, 1.0f);
+        
+        // Interpolate to full width at zoom=1
+        float CurrentSliceWidthUV = FMath::Lerp(BaseSliceWidthUV, 1.0f, ZoomFactor);
+        
+        // Calculate corresponding height based on aspect ratio
+        float CurrentSliceHeightUV = (CurrentSliceWidthUV * ImageSize.X) / (ImageSize.Y * OverlayAspect);
+        
+        // If height exceeds available capture, clamp and recalculate width
+        if (CurrentSliceHeightUV > 1.0f)
+        {
+          CurrentSliceHeightUV = 1.0f;
+          CurrentSliceWidthUV = (CurrentSliceHeightUV * ImageSize.Y * OverlayAspect) / ImageSize.X;
+        }
+        
+        // Position the slice: edge-aligned at low zoom, centered at high zoom
+        float StartU;
+        if (bIsLeftSide)
+        {
+          // Left mirror: Start at right edge (1.0 - width) at zoom=0, move to center as zoom increases
+          float EdgeAlignedU = 1.0f - CurrentSliceWidthUV;
+          float CenteredU = (1.0f - CurrentSliceWidthUV) * 0.5f;
+          StartU = FMath::Lerp(EdgeAlignedU, CenteredU, ZoomFactor);
+        }
+        else
+        {
+          // Right mirror: Start at left edge (0.0) at zoom=0, move to center as zoom increases
+          float EdgeAlignedU = 0.0f;
+          float CenteredU = (1.0f - CurrentSliceWidthUV) * 0.5f;
+          StartU = FMath::Lerp(EdgeAlignedU, CenteredU, ZoomFactor);
+        }
+        
+        float StartV = (1.0f - CurrentSliceHeightUV) * 0.5f;
+        
+        // Draw black background for letterboxing if needed
+        if (CurrentSliceHeightUV < 1.0f)
+        {
+          FSlateDrawElement::MakeBox(
+            OutDrawElements,
+            LayerId,
+            AllottedGeometry.ToPaintGeometry(),
+            FCoreStyle::Get().GetBrush("WhiteBrush"),
+            ESlateDrawEffect::None,
+            FLinearColor::Black
+          );
+          LayerId++;
+        }
+        
+        FSlateBrush ModifiedBrush = *Brush;
+        ModifiedBrush.SetUVRegion(FBox2D(
+          FVector2D(StartU, StartV),
+          FVector2D(StartU + CurrentSliceWidthUV, StartV + CurrentSliceHeightUV)
+        ));
+        
+        FSlateDrawElement::MakeBox(
+          OutDrawElements,
+          LayerId,
+          AllottedGeometry.ToPaintGeometry(),
+          &ModifiedBrush,
+          ESlateDrawEffect::None,
+          FLinearColor::White
+        );
       }
-      StartU = FMath::Clamp(StartU, 0.0f, 1.0f - SliceWidthUV);
-      
-      // Create a brush with modified UV region
-      FSlateBrush ModifiedBrush = *Brush;
-      
-      // Set UV region: StartUV is top-left corner, SizeUV is width/height in UV space
-      ModifiedBrush.SetUVRegion(FBox2D(
-        FVector2D(StartU, 0.0f),           // Top-left UV (pan left-right, full vertical)
-        FVector2D(StartU + SliceWidthUV, 1.0f)  // Bottom-right UV
-      ));
-      
-      // Draw the image with the custom UV region
-      FSlateDrawElement::MakeBox(
-        OutDrawElements,
-        LayerId,
-        AllottedGeometry.ToPaintGeometry(),
-        &ModifiedBrush,
-        ESlateDrawEffect::None,
-        FLinearColor::White
-      );
+      else // EMirrorMode::ZoomOutProper
+      {
+        // ZOOM OUT PROPER MODE: Show more of the capture while staying edge-aligned
+        // At pan=0.0: Show same edge-aligned view as pan mode
+        // At pan=1.0: Show as much as possible, still edge-aligned
+        
+        // Calculate zoom factor (0.0 = zoomed in, 1.0 = zoomed out)
+        float ZoomFactor = HorizontalPan;
+        
+        // Base slice size (at zoom=0)
+        float BaseSliceWidthUV = (ImageSize.X > 0) ? (OverlaySize.X / ImageSize.X) : 0.3f;
+        BaseSliceWidthUV = FMath::Clamp(BaseSliceWidthUV, 0.1f, 1.0f);
+        
+        // Interpolate to full width at zoom=1
+        float CurrentSliceWidthUV = FMath::Lerp(BaseSliceWidthUV, 1.0f, ZoomFactor);
+        
+        // Calculate corresponding height based on aspect ratio
+        float CurrentSliceHeightUV = (CurrentSliceWidthUV * ImageSize.X) / (ImageSize.Y * OverlayAspect);
+        
+        // If height exceeds available capture, clamp and recalculate width
+        if (CurrentSliceHeightUV > 1.0f)
+        {
+          CurrentSliceHeightUV = 1.0f;
+          CurrentSliceWidthUV = (CurrentSliceHeightUV * ImageSize.Y * OverlayAspect) / ImageSize.X;
+        }
+        
+        // Position: Always edge-aligned (never moves toward center)
+        float StartU;
+        if (bIsLeftSide)
+        {
+          // Left mirror: Always aligned to right edge
+          StartU = 1.0f - CurrentSliceWidthUV;
+        }
+        else
+        {
+          // Right mirror: Always aligned to left edge
+          StartU = 0.0f;
+        }
+        
+        float StartV = (1.0f - CurrentSliceHeightUV) * 0.5f;
+        
+        // Draw black background for letterboxing if needed
+        if (CurrentSliceHeightUV < 1.0f)
+        {
+          FSlateDrawElement::MakeBox(
+            OutDrawElements,
+            LayerId,
+            AllottedGeometry.ToPaintGeometry(),
+            FCoreStyle::Get().GetBrush("WhiteBrush"),
+            ESlateDrawEffect::None,
+            FLinearColor::Black
+          );
+          LayerId++;
+        }
+        
+        FSlateBrush ModifiedBrush = *Brush;
+        ModifiedBrush.SetUVRegion(FBox2D(
+          FVector2D(StartU, StartV),
+          FVector2D(StartU + CurrentSliceWidthUV, StartV + CurrentSliceHeightUV)
+        ));
+        
+        FSlateDrawElement::MakeBox(
+          OutDrawElements,
+          LayerId,
+          AllottedGeometry.ToPaintGeometry(),
+          &ModifiedBrush,
+          ESlateDrawEffect::None,
+          FLinearColor::White
+        );
+      }
       
       return LayerId + 1;
     }
@@ -123,6 +268,7 @@ private:
   const FSlateBrush* Brush;
   float HorizontalPan;
   bool bIsLeftSide;
+  EMirrorMode Mode;
 };
 
 // =====================================================
@@ -188,6 +334,9 @@ void ACarlaInteractiveMirror::BeginPlay()
     
     // Load configuration from JSON
     LoadConfigFromJSON();
+    
+    // Apply mode from config
+    MirrorMode = CurrentConfig.Mode;
     
     // Initialize mirror system
     InitializeMirror();
@@ -259,10 +408,11 @@ void ACarlaInteractiveMirror::Tick(float DeltaTime)
       FVector2D TestUV = TransformDelegate.Execute(HorizontalPan, FVector2D(0.5f, 0.5f), DeltaTime);
     }
 
-    // Update the mirror widget with current pan value
+    // Update the mirror widget with current pan value and mode
     if (MirrorImageWidget.IsValid())
     {
       MirrorImageWidget->SetHorizontalPan(HorizontalPan);
+      MirrorImageWidget->SetMode(MirrorMode);
     }
 
     // Trigger scene capture
@@ -383,6 +533,7 @@ void ACarlaInteractiveMirror::CreateMirrorWidget()
           .Brush(MirrorBrush.Get())
           .HorizontalPan(HorizontalPan)
           .bIsLeftSide(bIsLeftSide)
+          .Mode(MirrorMode)
         ]
       ]
     ];
@@ -470,7 +621,7 @@ void ACarlaInteractiveMirror::ProcessUDPPackets()
 void ACarlaInteractiveMirror::ParseUDPCommand(const FString& Command)
 {
   // Expected format: "command:value"
-  // Examples: "pan:0.5", "zoom:1.5"
+  // Examples: "pan:0.5", "mode:0", "mode:1"
   
   FString CommandName, ValueString;
   if (Command.Split(TEXT(":"), &CommandName, &ValueString))
@@ -478,12 +629,16 @@ void ACarlaInteractiveMirror::ParseUDPCommand(const FString& Command)
     CommandName = CommandName.TrimStartAndEnd();
     ValueString = ValueString.TrimStartAndEnd();
     
-    float Value = FCString::Atof(*ValueString);
-    
     if (CommandName.Equals(TEXT("pan"), ESearchCase::IgnoreCase))
     {
+      float Value = FCString::Atof(*ValueString);
       SetHorizontalPan(Value);
       UE_LOG(LogTemp, Verbose, TEXT("CarlaInteractiveMirror: Set pan to %.3f"), Value);
+    }
+    else if (CommandName.Equals(TEXT("mode"), ESearchCase::IgnoreCase))
+    {
+      int32 Value = FCString::Atoi(*ValueString);
+      SetMirrorMode(Value);
     }
     else
     {
@@ -521,6 +676,32 @@ FVector2D ACarlaInteractiveMirror::DefaultPanTransform(float PanValue, FVector2D
 void ACarlaInteractiveMirror::SetHorizontalPan(float NewPan)
 {
   HorizontalPan = FMath::Clamp(NewPan, 0.0f, 1.0f);
+}
+
+/**
+ * SetMirrorMode Implementation
+ */
+void ACarlaInteractiveMirror::SetMirrorMode(int32 Mode)
+{
+  if (Mode == 0)
+  {
+    MirrorMode = EMirrorMode::Pan;
+    UE_LOG(LogTemp, Log, TEXT("CarlaInteractiveMirror: Switched to Pan mode"));
+  }
+  else if (Mode == 1)
+  {
+    MirrorMode = EMirrorMode::ZoomOut;
+    UE_LOG(LogTemp, Log, TEXT("CarlaInteractiveMirror: Switched to ZoomOut mode"));
+  }
+  else if (Mode == 2)
+  {
+    MirrorMode = EMirrorMode::ZoomOutProper;
+    UE_LOG(LogTemp, Log, TEXT("CarlaInteractiveMirror: Switched to ZoomOutProper mode"));
+  }
+  else
+  {
+    UE_LOG(LogTemp, Warning, TEXT("CarlaInteractiveMirror: Invalid mode %d (use 0=Pan, 1=ZoomOut, 2=ZoomOutProper)"), Mode);
+  }
 }
 
 /**
@@ -703,10 +884,40 @@ bool ACarlaInteractiveMirror::LoadConfigFromJSON()
     {
       CurrentConfig.BorderWidth = OverlayObj->GetNumberField(TEXT("border_width"));
     }
+
+    if (OverlayObj->HasField(TEXT("mode")))
+    {
+      FString ModeString = OverlayObj->GetStringField(TEXT("mode"));
+      if (ModeString.Equals(TEXT("zoomout"), ESearchCase::IgnoreCase))
+      {
+        CurrentConfig.Mode = EMirrorMode::ZoomOut;
+      }
+      else if (ModeString.Equals(TEXT("zoomout_proper"), ESearchCase::IgnoreCase))
+      {
+        CurrentConfig.Mode = EMirrorMode::ZoomOutProper;
+      }
+      else
+      {
+        CurrentConfig.Mode = EMirrorMode::Pan;
+      }
+    }
   }
   
-  UE_LOG(LogTemp, Log, TEXT("CarlaInteractiveMirror: Loaded configuration for node '%s' - Border: %s (%.0fpx)"), 
-    *NodeName, CurrentConfig.bEnableBorder ? TEXT("enabled") : TEXT("disabled"), CurrentConfig.BorderWidth);
+  FString ModeName = TEXT("Pan");
+  if (CurrentConfig.Mode == EMirrorMode::ZoomOut)
+  {
+    ModeName = TEXT("ZoomOut");
+  }
+  else if (CurrentConfig.Mode == EMirrorMode::ZoomOutProper)
+  {
+    ModeName = TEXT("ZoomOutProper");
+  }
+  
+  UE_LOG(LogTemp, Log, TEXT("CarlaInteractiveMirror: Loaded configuration for node '%s' - Border: %s (%.0fpx), Mode: %s"), 
+    *NodeName, 
+    CurrentConfig.bEnableBorder ? TEXT("enabled") : TEXT("disabled"), 
+    CurrentConfig.BorderWidth,
+    *ModeName);
   return true;
 }
 
@@ -796,11 +1007,18 @@ void ACarlaInteractiveMirror::UpdateHeroVehicleTracking(float DeltaTime)
                 MirrorSceneCapture->SetRelativeRotation(CurrentConfig.RelativeRotation);
                 
                 // Reset pan to 0.0 when attaching to hero vehicle
+                // This anchors to the edge (Pan mode) or minimum zoom (ZoomOut mode)
                 HorizontalPan = 0.0f;
                 if (MirrorImageWidget.IsValid())
                 {
                   MirrorImageWidget->SetHorizontalPan(HorizontalPan);
-                  UE_LOG(LogTemp, Log, TEXT("CarlaInteractiveMirror: Reset HorizontalPan to 0.0 on hero attach"));
+                  MirrorImageWidget->SetMode(MirrorMode);  // Ensure mode is also updated
+                  
+                  FString ModeName = TEXT("Pan");
+                  if (MirrorMode == EMirrorMode::ZoomOut) ModeName = TEXT("ZoomOut");
+                  else if (MirrorMode == EMirrorMode::ZoomOutProper) ModeName = TEXT("ZoomOutProper");
+                  
+                  UE_LOG(LogTemp, Log, TEXT("CarlaInteractiveMirror: Reset HorizontalPan to 0.0 on hero attach (Mode: %s)"), *ModeName);
                 }
                 
                 UE_LOG(LogTemp, Warning, TEXT("CarlaInteractiveMirror: Attached to hero - Relative Loc: (%.1f, %.1f, %.1f) World Loc: %s"),
@@ -816,13 +1034,13 @@ void ACarlaInteractiveMirror::UpdateHeroVehicleTracking(float DeltaTime)
       }
     }
     
-    // Log if no hero found (only once per second to avoid spam)
+    // Log if no hero found (only once per 5 seconds to avoid spam)
     if (!bFoundHero)
     {
       HeroSearchLogTimer += DeltaTime;
-      if (HeroSearchLogTimer >= 1.0f)
+      if (HeroSearchLogTimer >= 5.0f)
       {
-        UE_LOG(LogTemp, Warning, TEXT("CarlaInteractiveMirror: No hero vehicle found in actor registry. Make sure vehicle has role_name='hero' attribute"));
+        UE_LOG(LogTemp, Verbose, TEXT("CarlaInteractiveMirror: No hero vehicle found in actor registry. Make sure vehicle has role_name='hero' attribute"));
         HeroSearchLogTimer = 0.0f;
       }
     }

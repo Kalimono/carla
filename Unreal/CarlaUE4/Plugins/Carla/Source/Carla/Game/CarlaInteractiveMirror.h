@@ -20,6 +20,17 @@
 class SMirrorImage;
 
 /**
+ * Mirror display mode enumeration.
+ */
+UENUM(BlueprintType)
+enum class EMirrorMode : uint8
+{
+  Pan           UMETA(DisplayName = "Pan Mode"),           // Slide a fixed-size slice horizontally
+  ZoomOut       UMETA(DisplayName = "Zoom Out Mode"),      // Zoom out and pan toward center
+  ZoomOutProper UMETA(DisplayName = "Zoom Out Proper")     // Zoom out while staying edge-aligned
+};
+
+/**
  * Mirror configuration structure loaded from JSON.
  */
 USTRUCT(BlueprintType)
@@ -60,6 +71,10 @@ struct FMirrorConfig
 
   UPROPERTY(EditAnywhere, BlueprintReadWrite)
   float BorderWidth = 5.0f;
+
+  // Mirror display mode
+  UPROPERTY(EditAnywhere, BlueprintReadWrite)
+  EMirrorMode Mode = EMirrorMode::Pan;
 };
 
 /**
@@ -183,6 +198,14 @@ public:
   int32 MirrorHeight = 768;
 
   /**
+   * Current mirror display mode.
+   * Pan: Slide a fixed-size slice horizontally
+   * ZoomOut: Zoom out to show more of the capture while maintaining aspect ratio
+   */
+  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Mirror|Transform")
+  EMirrorMode MirrorMode = EMirrorMode::Pan;
+
+  /**
    * Current horizontal pan value (0.0 to 1.0).
    * Left mirror: 0.0 = far right edge, 1.0 = far left edge
    * Right mirror: 0.0 = far left edge, 1.0 = far right edge
@@ -204,6 +227,13 @@ public:
    */
   UFUNCTION(BlueprintCallable, Category = "Mirror")
   void SetHorizontalPan(float NewPan);
+
+  /**
+   * Set the mirror display mode.
+   * Use console command: SetMirrorMode 0 (Pan) or SetMirrorMode 1 (ZoomOut)
+   */
+  UFUNCTION(Exec, BlueprintCallable, Category = "Mirror")
+  void SetMirrorMode(int32 Mode);
 
   /**
    * Set a custom transform delegate for modular behavior.
