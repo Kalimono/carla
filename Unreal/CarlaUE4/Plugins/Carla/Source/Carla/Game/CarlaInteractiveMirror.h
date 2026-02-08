@@ -190,13 +190,13 @@ public:
    * Mirror render target resolution width.
    */
   UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Mirror|Rendering")
-  int32 MirrorWidth = 1024;
+  int32 MirrorWidth = 1280;
 
   /**
    * Mirror render target resolution height.
    */
   UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Mirror|Rendering")
-  int32 MirrorHeight = 768;
+  int32 MirrorHeight = 960;
 
   /**
    * Current mirror display mode.
