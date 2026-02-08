@@ -86,10 +86,7 @@ public:
       if (Mode == EMirrorMode::Pan)
       {
         // PAN MODE: Slide a fixed-size slice horizontally
-        // Calculate slice width that maintains proper aspect ratio
-        // We want: (SliceWidthUV / SliceHeightUV) = (OverlayAspect / ImageAspect)
-        // Since SliceHeightUV = 1.0 (full height), SliceWidthUV = OverlayAspect / ImageAspect
-        float SliceWidthUV = OverlayAspect / ImageAspect;
+        float SliceWidthUV = (ImageSize.X > 0) ? (OverlaySize.X / ImageSize.X) : 0.3f;
         SliceWidthUV = FMath::Clamp(SliceWidthUV, 0.1f, 1.0f);
         
         float StartU;
@@ -127,19 +124,19 @@ public:
         // Calculate zoom factor (0.0 = zoomed in, 1.0 = zoomed out)
         float ZoomFactor = HorizontalPan;
         
-        // Base slice size (at zoom=0) - maintain proper aspect ratio
-        float BaseSliceWidthUV = OverlayAspect / ImageAspect;
+        // Base slice size (at zoom=0)
+        float BaseSliceWidthUV = (ImageSize.X > 0) ? (OverlaySize.X / ImageSize.X) : 0.3f;
         BaseSliceWidthUV = FMath::Clamp(BaseSliceWidthUV, 0.1f, 1.0f);
         
         // Calculate the "critical width" where height would reach exactly 1.0
-        float CriticalWidthUV = OverlayAspect / ImageAspect;
+        float CriticalWidthUV = (ImageSize.Y * OverlayAspect) / ImageSize.X;
         CriticalWidthUV = FMath::Clamp(CriticalWidthUV, BaseSliceWidthUV, 1.0f);
         
         // Interpolate to full width at zoom=1
         float CurrentSliceWidthUV = FMath::Lerp(BaseSliceWidthUV, 1.0f, ZoomFactor);
         
         // Calculate corresponding height based on aspect ratio
-        float CurrentSliceHeightUV = (CurrentSliceWidthUV / OverlayAspect) * ImageAspect;
+        float CurrentSliceHeightUV = (CurrentSliceWidthUV * ImageSize.X) / (ImageSize.Y * OverlayAspect);
         
         // Calculate center-pan factor: 0.0 when width < critical, scales up after
         float CenterPanFactor = 0.0f;
@@ -152,7 +149,7 @@ public:
         if (CurrentSliceHeightUV > 1.0f)
         {
           CurrentSliceHeightUV = 1.0f;
-          CurrentSliceWidthUV = (CurrentSliceHeightUV / ImageAspect) * OverlayAspect;
+          CurrentSliceWidthUV = (CurrentSliceHeightUV * ImageSize.Y * OverlayAspect) / ImageSize.X;
         }
         
         // Position the slice: edge-aligned until height=1.0, then pan toward center
@@ -212,21 +209,21 @@ public:
         // Calculate zoom factor (0.0 = zoomed in, 1.0 = zoomed out)
         float ZoomFactor = HorizontalPan;
         
-        // Base slice size (at zoom=0) - maintain proper aspect ratio
-        float BaseSliceWidthUV = OverlayAspect / ImageAspect;
+        // Base slice size (at zoom=0)
+        float BaseSliceWidthUV = (ImageSize.X > 0) ? (OverlaySize.X / ImageSize.X) : 0.3f;
         BaseSliceWidthUV = FMath::Clamp(BaseSliceWidthUV, 0.1f, 1.0f);
         
         // Interpolate to full width at zoom=1
         float CurrentSliceWidthUV = FMath::Lerp(BaseSliceWidthUV, 1.0f, ZoomFactor);
         
         // Calculate corresponding height based on aspect ratio
-        float CurrentSliceHeightUV = (CurrentSliceWidthUV / OverlayAspect) * ImageAspect;
+        float CurrentSliceHeightUV = (CurrentSliceWidthUV * ImageSize.X) / (ImageSize.Y * OverlayAspect);
         
         // If height exceeds available capture, clamp and recalculate width
         if (CurrentSliceHeightUV > 1.0f)
         {
           CurrentSliceHeightUV = 1.0f;
-          CurrentSliceWidthUV = (CurrentSliceHeightUV / ImageAspect) * OverlayAspect;
+          CurrentSliceWidthUV = (CurrentSliceHeightUV * ImageSize.Y * OverlayAspect) / ImageSize.X;
         }
         
         // Position: Always edge-aligned (never moves toward center)
@@ -282,15 +279,15 @@ public:
         // Calculate zoom factor (0.0 = zoomed in, 1.0 = fully zoomed out)
         float ZoomFactor = HorizontalPan;
         
-        // Base slice size (at zoom=0) - maintain proper aspect ratio
-        float BaseSliceWidthUV = OverlayAspect / ImageAspect;
+        // Base slice size (at zoom=0)
+        float BaseSliceWidthUV = (ImageSize.X > 0) ? (OverlaySize.X / ImageSize.X) : 0.3f;
         BaseSliceWidthUV = FMath::Clamp(BaseSliceWidthUV, 0.1f, 1.0f);
         
         // Calculate what width would give us at this zoom level
         float DesiredSliceWidthUV = FMath::Lerp(BaseSliceWidthUV, 1.0f, ZoomFactor);
         
         // Calculate corresponding height based on aspect ratio
-        float CorrespondingHeightUV = (DesiredSliceWidthUV / OverlayAspect) * ImageAspect;
+        float CorrespondingHeightUV = (DesiredSliceWidthUV * ImageSize.X) / (ImageSize.Y * OverlayAspect);
         
         float CurrentSliceWidthUV;
         float CurrentSliceHeightUV;
@@ -312,7 +309,7 @@ public:
           
           // Calculate how much of the overlay height the image should occupy
           // to maintain aspect ratio with the current width
-          RenderHeightFraction = (CurrentSliceHeightUV / (CurrentSliceWidthUV / OverlayAspect)) * ImageAspect;
+          RenderHeightFraction = (CurrentSliceHeightUV * ImageSize.Y * OverlayAspect) / (CurrentSliceWidthUV * ImageSize.X);
           RenderHeightFraction = FMath::Clamp(RenderHeightFraction, 0.1f, 1.0f);
         }
         
