@@ -73,6 +73,10 @@ struct FMirrorConfig
   UPROPERTY(EditAnywhere, BlueprintReadWrite)
   float BorderWidth = 5.0f;
 
+  // Zoom behavior settings
+  UPROPERTY(EditAnywhere, BlueprintReadWrite)
+  float BaseZoomLevel = 0.6f;  // Fraction of max width to use at zoom=0 (0.0-1.0), default 0.6 = 60%
+
   // Mirror display mode
   UPROPERTY(EditAnywhere, BlueprintReadWrite)
   EMirrorMode Mode = EMirrorMode::Pan;

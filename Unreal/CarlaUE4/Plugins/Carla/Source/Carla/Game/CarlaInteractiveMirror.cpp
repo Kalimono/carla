@@ -44,6 +44,7 @@ public:
     SLATE_ARGUMENT(float, HorizontalPan)
     SLATE_ARGUMENT(bool, bIsLeftSide)  // True for left mirror, false for right
     SLATE_ARGUMENT(EMirrorMode, Mode)  // Pan or ZoomOut mode
+    SLATE_ARGUMENT(float, BaseZoomLevel)  // Base zoom level (0.0-1.0), default 0.6
   SLATE_END_ARGS()
 
   void Construct(const FArguments& InArgs)
@@ -52,6 +53,7 @@ public:
     HorizontalPan = InArgs._HorizontalPan;
     bIsLeftSide = InArgs._bIsLeftSide;
     Mode = InArgs._Mode;
+    BaseZoomLevel = InArgs._BaseZoomLevel;
 
     ChildSlot
     [
@@ -86,7 +88,10 @@ public:
       if (Mode == EMirrorMode::Pan)
       {
         // PAN MODE: Slide a fixed-size slice horizontally
-        float SliceWidthUV = (ImageSize.X > 0) ? (OverlaySize.X / ImageSize.X) : 0.3f;
+        // Calculate slice width to match the mirror's aspect ratio
+        // Formula: SliceWidthUV = OverlayAspect / ImageAspect
+        // This ensures captured content has same aspect ratio as the mirror
+        float SliceWidthUV = (ImageAspect > 0) ? (OverlayAspect / ImageAspect) : 0.3f;
         SliceWidthUV = FMath::Clamp(SliceWidthUV, 0.1f, 1.0f);
         
         float StartU;
@@ -118,32 +123,22 @@ public:
       else if (Mode == EMirrorMode::ZoomOut)
       {
         // ZOOM OUT MODE: Show more of the capture as pan increases
-        // Phase 1: Zoom out while staying edge-aligned until height reaches 100%
-        // Phase 2: Once height = 100%, continue zooming width and pan toward center
+        // Phase 1 (pan 0.0-0.75): Zoom out while staying edge-aligned until max width
+        // Phase 2 (pan 0.75-1.0): Stay at max width and pan toward center
         
-        // Calculate zoom factor (0.0 = zoomed in, 1.0 = zoomed out)
-        float ZoomFactor = HorizontalPan;
+        // Maximum slice width that maintains mirror aspect ratio
+        float MaxSliceWidthUV = (ImageAspect > 0) ? (OverlayAspect / ImageAspect) : 0.5f;
+        MaxSliceWidthUV = FMath::Clamp(MaxSliceWidthUV, 0.1f, 1.0f);
         
         // Base slice size (at zoom=0)
-        float BaseSliceWidthUV = (ImageSize.X > 0) ? (OverlaySize.X / ImageSize.X) : 0.3f;
-        BaseSliceWidthUV = FMath::Clamp(BaseSliceWidthUV, 0.1f, 1.0f);
+        float BaseSliceWidthUV = MaxSliceWidthUV * BaseZoomLevel;
         
-        // Calculate the "critical width" where height would reach exactly 1.0
-        float CriticalWidthUV = (ImageSize.Y * OverlayAspect) / ImageSize.X;
-        CriticalWidthUV = FMath::Clamp(CriticalWidthUV, BaseSliceWidthUV, 1.0f);
-        
-        // Interpolate to full width at zoom=1
-        float CurrentSliceWidthUV = FMath::Lerp(BaseSliceWidthUV, 1.0f, ZoomFactor);
+        // Interpolate from zoomed-in to maximum width (reaches max at pan=0.75)
+        float ZoomPhase = FMath::Min(HorizontalPan / 0.75f, 1.0f);
+        float CurrentSliceWidthUV = FMath::Lerp(BaseSliceWidthUV, MaxSliceWidthUV, ZoomPhase);
         
         // Calculate corresponding height based on aspect ratio
         float CurrentSliceHeightUV = (CurrentSliceWidthUV * ImageSize.X) / (ImageSize.Y * OverlayAspect);
-        
-        // Calculate center-pan factor: 0.0 when width < critical, scales up after
-        float CenterPanFactor = 0.0f;
-        if (CurrentSliceWidthUV > CriticalWidthUV && CriticalWidthUV < 1.0f)
-        {
-          CenterPanFactor = (CurrentSliceWidthUV - CriticalWidthUV) / (1.0f - CriticalWidthUV);
-        }
         
         // If height exceeds available capture, clamp and recalculate width
         if (CurrentSliceHeightUV > 1.0f)
@@ -152,18 +147,25 @@ public:
           CurrentSliceWidthUV = (CurrentSliceHeightUV * ImageSize.Y * OverlayAspect) / ImageSize.X;
         }
         
-        // Position the slice: edge-aligned until height=1.0, then pan toward center
+        // Calculate pan factor: 0.0 from pan 0-0.75, then scales from 0 to 1 during pan 0.75-1.0
+        float CenterPanFactor = 0.0f;
+        if (HorizontalPan > 0.75f)
+        {
+          CenterPanFactor = (HorizontalPan - 0.75f) / 0.25f;  // Maps 0.75-1.0 to 0.0-1.0
+        }
+        
+        // Position the slice: edge-aligned during zoom phase, then pan toward center
         float StartU;
         if (bIsLeftSide)
         {
-          // Left mirror: Start at right edge, move to center only after height maxes
+          // Left mirror: Start at right edge, move to center during pan phase
           float EdgeAlignedU = 1.0f - CurrentSliceWidthUV;
           float CenteredU = (1.0f - CurrentSliceWidthUV) * 0.5f;
           StartU = FMath::Lerp(EdgeAlignedU, CenteredU, CenterPanFactor);
         }
         else
         {
-          // Right mirror: Start at left edge, move to center only after height maxes
+          // Right mirror: Start at left edge, move to center during pan phase
           float EdgeAlignedU = 0.0f;
           float CenteredU = (1.0f - CurrentSliceWidthUV) * 0.5f;
           StartU = FMath::Lerp(EdgeAlignedU, CenteredU, CenterPanFactor);
@@ -203,18 +205,21 @@ public:
       else if (Mode == EMirrorMode::ZoomOutProper)
       {
         // ZOOM OUT PROPER MODE: Show more of the capture while staying edge-aligned
-        // At pan=0.0: Show same edge-aligned view as pan mode
-        // At pan=1.0: Show as much as possible, still edge-aligned
+        // At pan=0.0: Show zoomed-in edge-aligned view
+        // At pan=1.0: Show maximum without center panning, still edge-aligned
         
         // Calculate zoom factor (0.0 = zoomed in, 1.0 = zoomed out)
         float ZoomFactor = HorizontalPan;
         
-        // Base slice size (at zoom=0)
-        float BaseSliceWidthUV = (ImageSize.X > 0) ? (OverlaySize.X / ImageSize.X) : 0.3f;
-        BaseSliceWidthUV = FMath::Clamp(BaseSliceWidthUV, 0.1f, 1.0f);
+        // Maximum slice width that maintains mirror aspect ratio
+        float MaxSliceWidthUV = (ImageAspect > 0) ? (OverlayAspect / ImageAspect) : 0.5f;
+        MaxSliceWidthUV = FMath::Clamp(MaxSliceWidthUV, 0.1f, 1.0f);
         
-        // Interpolate to full width at zoom=1
-        float CurrentSliceWidthUV = FMath::Lerp(BaseSliceWidthUV, 1.0f, ZoomFactor);
+        // Base slice size (at zoom=0)
+        float BaseSliceWidthUV = MaxSliceWidthUV * BaseZoomLevel;
+        
+        // Interpolate from zoomed-in to maximum width
+        float CurrentSliceWidthUV = FMath::Lerp(BaseSliceWidthUV, MaxSliceWidthUV, ZoomFactor);
         
         // Calculate corresponding height based on aspect ratio
         float CurrentSliceHeightUV = (CurrentSliceWidthUV * ImageSize.X) / (ImageSize.Y * OverlayAspect);
@@ -273,17 +278,21 @@ public:
       else // EMirrorMode::ZoomOutBorder
       {
         // ZOOM OUT BORDER MODE: Show more width with letterboxing when height maxes out
-        // At pan=0.0: Show same edge-aligned view as zoomout_proper
-        // As pan increases: Zoom out until height = 100%, then add letterboxing and continue width
+        // At pan=0.0: Show zoomed-in edge-aligned view
+        // As pan increases: Zoom out until height = 100% (around pan=0.75), then add letterboxing and continue width
         
         // Calculate zoom factor (0.0 = zoomed in, 1.0 = fully zoomed out)
         float ZoomFactor = HorizontalPan;
         
+        // Maximum slice width that maintains mirror aspect ratio
+        float MaxSliceWidthUV = (ImageAspect > 0) ? (OverlayAspect / ImageAspect) : 0.5f;
+        MaxSliceWidthUV = FMath::Clamp(MaxSliceWidthUV, 0.1f, 1.0f);
+        
         // Base slice size (at zoom=0)
-        float BaseSliceWidthUV = (ImageSize.X > 0) ? (OverlaySize.X / ImageSize.X) : 0.3f;
-        BaseSliceWidthUV = FMath::Clamp(BaseSliceWidthUV, 0.1f, 1.0f);
+        float BaseSliceWidthUV = MaxSliceWidthUV * BaseZoomLevel;
         
         // Calculate what width would give us at this zoom level
+        // For ZoomOutBorder, we continue past MaxSliceWidthUV to show more width with letterboxing
         float DesiredSliceWidthUV = FMath::Lerp(BaseSliceWidthUV, 1.0f, ZoomFactor);
         
         // Calculate corresponding height based on aspect ratio
@@ -375,6 +384,7 @@ private:
   float HorizontalPan;
   bool bIsLeftSide;
   EMirrorMode Mode;
+  float BaseZoomLevel;  // Base zoom level from config
 };
 
 // =====================================================
@@ -712,6 +722,7 @@ void ACarlaInteractiveMirror::CreateMirrorWidget()
           .HorizontalPan(HorizontalPan)
           .bIsLeftSide(bIsLeftSide)
           .Mode(MirrorMode)
+          .BaseZoomLevel(CurrentConfig.BaseZoomLevel)
         ]
       ]
     ];
@@ -1100,6 +1111,11 @@ bool ACarlaInteractiveMirror::LoadConfigFromJSON()
       {
         CurrentConfig.Mode = EMirrorMode::Pan;
       }
+    }
+
+    if (OverlayObj->HasField(TEXT("base_zoom_level")))
+    {
+      CurrentConfig.BaseZoomLevel = FMath::Clamp((float)OverlayObj->GetNumberField(TEXT("base_zoom_level")), 0.1f, 0.95f);
     }
   }
   
