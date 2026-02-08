@@ -215,9 +215,10 @@ public:
    * Left mirror: 0.0 = far right edge, 1.0 = far left edge
    * Right mirror: 0.0 = far left edge, 1.0 = far right edge
    * This is updated via UDP and controls which slice of the render target is displayed.
+   * Default 1.0f shows the default (rightmost for left mirror, leftmost for right mirror).
    */
   UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Mirror|Transform")
-  float HorizontalPan = 0.0f;
+  float HorizontalPan = 1.0f;
 
   /**
    * Mirror update rate in Hz (0 = every frame).

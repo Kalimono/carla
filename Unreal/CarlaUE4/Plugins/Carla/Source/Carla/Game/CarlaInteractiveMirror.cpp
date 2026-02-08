@@ -97,18 +97,18 @@ public:
         float StartU;
         if (bIsLeftSide)
         {
-          StartU = (1.0f - HorizontalPan) * (1.0f - SliceWidthUV);
+          StartU = HorizontalPan * (1.0f - SliceWidthUV);
         }
         else
         {
-          StartU = HorizontalPan * (1.0f - SliceWidthUV);
+          StartU = (1.0f - HorizontalPan) * (1.0f - SliceWidthUV);
         }
         StartU = FMath::Clamp(StartU, 0.0f, 1.0f - SliceWidthUV);
         
         FSlateBrush ModifiedBrush = *Brush;
         ModifiedBrush.SetUVRegion(FBox2D(
-          FVector2D(StartU, 0.0f),
-          FVector2D(StartU + SliceWidthUV, 1.0f)
+          FVector2D(StartU + SliceWidthUV, 0.0f),
+          FVector2D(StartU, 1.0f)
         ));
         
         FSlateDrawElement::MakeBox(
@@ -122,19 +122,21 @@ public:
       }
       else if (Mode == EMirrorMode::ZoomOut)
       {
-        // ZOOM OUT MODE: Show more of the capture as pan increases
-        // Phase 1 (pan 0.0-0.75): Zoom out while staying edge-aligned until max width
-        // Phase 2 (pan 0.75-1.0): Stay at max width and pan toward center
+        // ZOOM OUT MODE: Show more of the capture as pan decreases
+        // Phase 1 (pan 1.0->0.25): Zoom out while staying edge-aligned until max width
+        // Phase 2 (pan 0.25->0.0): Pan away from edge while zoomed out
+        // At pan=1.0 (default): Zoomed in, positioned at edge
         
         // Maximum slice width that maintains mirror aspect ratio
         float MaxSliceWidthUV = (ImageAspect > 0) ? (OverlayAspect / ImageAspect) : 0.5f;
         MaxSliceWidthUV = FMath::Clamp(MaxSliceWidthUV, 0.1f, 1.0f);
         
-        // Base slice size (at zoom=0)
+        // Base slice size (at zoom in, pan=1.0)
         float BaseSliceWidthUV = MaxSliceWidthUV * BaseZoomLevel;
         
-        // Interpolate from zoomed-in to maximum width (reaches max at pan=0.75)
-        float ZoomPhase = FMath::Min(HorizontalPan / 0.75f, 1.0f);
+        // Invert zoom phase: pan 1.0->0.25 zooms out, pan 0.25->0.0 stays at max and pans
+        float InvertedPan = 1.0f - HorizontalPan;  // 0.0 at pan=1.0, 1.0 at pan=0.0
+        float ZoomPhase = FMath::Min(InvertedPan / 0.75f, 1.0f);
         float CurrentSliceWidthUV = FMath::Lerp(BaseSliceWidthUV, MaxSliceWidthUV, ZoomPhase);
         
         // Calculate corresponding height based on aspect ratio
@@ -147,25 +149,25 @@ public:
           CurrentSliceWidthUV = (CurrentSliceHeightUV * ImageSize.Y * OverlayAspect) / ImageSize.X;
         }
         
-        // Calculate pan factor: 0.0 from pan 0-0.75, then scales from 0 to 1 during pan 0.75-1.0
+        // Calculate pan factor: 0.0 from pan 1.0-0.25, then scales from 0 to 1 during pan 0.25-0.0
         float CenterPanFactor = 0.0f;
-        if (HorizontalPan > 0.75f)
+        if (InvertedPan > 0.75f)
         {
-          CenterPanFactor = (HorizontalPan - 0.75f) / 0.25f;  // Maps 0.75-1.0 to 0.0-1.0
+          CenterPanFactor = (InvertedPan - 0.75f) / 0.25f;  // Maps 0.75-1.0 (inverted) to 0.0-1.0
         }
         
         // Position the slice: edge-aligned during zoom phase, then pan toward center
         float StartU;
         if (bIsLeftSide)
         {
-          // Left mirror: Start at right edge, move to center during pan phase
+          // Left mirror: Start at right edge (visually, after mirroring), move to center during pan phase
           float EdgeAlignedU = 1.0f - CurrentSliceWidthUV;
           float CenteredU = (1.0f - CurrentSliceWidthUV) * 0.5f;
           StartU = FMath::Lerp(EdgeAlignedU, CenteredU, CenterPanFactor);
         }
         else
         {
-          // Right mirror: Start at left edge, move to center during pan phase
+          // Right mirror: Start at left edge (visually, after mirroring), move to center during pan phase
           float EdgeAlignedU = 0.0f;
           float CenteredU = (1.0f - CurrentSliceWidthUV) * 0.5f;
           StartU = FMath::Lerp(EdgeAlignedU, CenteredU, CenterPanFactor);
@@ -189,8 +191,8 @@ public:
         
         FSlateBrush ModifiedBrush = *Brush;
         ModifiedBrush.SetUVRegion(FBox2D(
-          FVector2D(StartU, StartV),
-          FVector2D(StartU + CurrentSliceWidthUV, StartV + CurrentSliceHeightUV)
+          FVector2D(StartU + CurrentSliceWidthUV, StartV),
+          FVector2D(StartU, StartV + CurrentSliceHeightUV)
         ));
         
         FSlateDrawElement::MakeBox(
@@ -205,11 +207,11 @@ public:
       else if (Mode == EMirrorMode::ZoomOutProper)
       {
         // ZOOM OUT PROPER MODE: Show more of the capture while staying edge-aligned
-        // At pan=0.0: Show zoomed-in edge-aligned view
-        // At pan=1.0: Show maximum without center panning, still edge-aligned
+        // At pan=1.0 (default): Show zoomed-in edge-aligned view
+        // At pan=0.0: Show maximum without center panning, still edge-aligned
         
-        // Calculate zoom factor (0.0 = zoomed in, 1.0 = zoomed out)
-        float ZoomFactor = HorizontalPan;
+        // Calculate zoom factor (inverted: 0.0 at pan=1.0 = zoomed in, 1.0 at pan=0.0 = zoomed out)
+        float ZoomFactor = 1.0f - HorizontalPan;
         
         // Maximum slice width that maintains mirror aspect ratio
         float MaxSliceWidthUV = (ImageAspect > 0) ? (OverlayAspect / ImageAspect) : 0.5f;
@@ -235,12 +237,12 @@ public:
         float StartU;
         if (bIsLeftSide)
         {
-          // Left mirror: Always aligned to right edge
+          // Left mirror: Always aligned to right edge (visually, after mirroring)
           StartU = 1.0f - CurrentSliceWidthUV;
         }
         else
         {
-          // Right mirror: Always aligned to left edge
+          // Right mirror: Always aligned to left edge (visually, after mirroring)
           StartU = 0.0f;
         }
         
@@ -262,8 +264,8 @@ public:
         
         FSlateBrush ModifiedBrush = *Brush;
         ModifiedBrush.SetUVRegion(FBox2D(
-          FVector2D(StartU, StartV),
-          FVector2D(StartU + CurrentSliceWidthUV, StartV + CurrentSliceHeightUV)
+          FVector2D(StartU + CurrentSliceWidthUV, StartV),
+          FVector2D(StartU, StartV + CurrentSliceHeightUV)
         ));
         
         FSlateDrawElement::MakeBox(
@@ -278,11 +280,11 @@ public:
       else // EMirrorMode::ZoomOutBorder
       {
         // ZOOM OUT BORDER MODE: Show more width with letterboxing when height maxes out
-        // At pan=0.0: Show zoomed-in edge-aligned view
-        // As pan increases: Zoom out until height = 100% (around pan=0.75), then add letterboxing and continue width
+        // At pan=1.0 (default): Show zoomed-in edge-aligned view
+        // As pan decreases: Zoom out until height = 100% (around pan=0.25), then add letterboxing and continue width
         
-        // Calculate zoom factor (0.0 = zoomed in, 1.0 = fully zoomed out)
-        float ZoomFactor = HorizontalPan;
+        // Calculate zoom factor (inverted: 0.0 at pan=1.0 = zoomed in, 1.0 at pan=0.0 = fully zoomed out)
+        float ZoomFactor = 1.0f - HorizontalPan;
         
         // Maximum slice width that maintains mirror aspect ratio
         float MaxSliceWidthUV = (ImageAspect > 0) ? (OverlayAspect / ImageAspect) : 0.5f;
@@ -326,12 +328,12 @@ public:
         float StartU;
         if (bIsLeftSide)
         {
-          // Left mirror: Always aligned to right edge
+          // Left mirror: Always aligned to right edge (visually, after mirroring)
           StartU = 1.0f - CurrentSliceWidthUV;
         }
         else
         {
-          // Right mirror: Always aligned to left edge
+          // Right mirror: Always aligned to left edge (visually, after mirroring)
           StartU = 0.0f;
         }
         
@@ -359,8 +361,8 @@ public:
         
         FSlateBrush ModifiedBrush = *Brush;
         ModifiedBrush.SetUVRegion(FBox2D(
-          FVector2D(StartU, StartV),
-          FVector2D(StartU + CurrentSliceWidthUV, StartV + CurrentSliceHeightUV)
+          FVector2D(StartU + CurrentSliceWidthUV, StartV),
+          FVector2D(StartU, StartV + CurrentSliceHeightUV)
         ));
         
         FSlateDrawElement::MakeBox(
