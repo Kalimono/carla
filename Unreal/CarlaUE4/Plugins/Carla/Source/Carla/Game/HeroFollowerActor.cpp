@@ -91,43 +91,18 @@ void AHeroFollowerActor::Tick(float DeltaSeconds)
     TryFindHero();
   }
 
-  if (bDoDebug)
-  {
-    UE_LOG(LogTemp, Log, TEXT("HeroFollower [%s]: Hero=%s Root=%s TargetComp=%s"),
-      bShouldUpdateTransform ? TEXT("MASTER") : TEXT("SLAVE"),
-      HeroVehicle ? *HeroVehicle->GetName() : TEXT("null"),
-      RootDisplayActor ? *RootDisplayActor->GetName() : TEXT("null"),
-      NDisplayTargetComponent ? *NDisplayTargetComponent->GetName() : TEXT("null"));
-  }
+  // Debug logging removed
 
   // Only master should update the transform - slaves will sync automatically via nDisplay
   if (HeroVehicle && NDisplayTargetComponent)
   {
     UpdateNDisplayTargetTransform();
 
-    if (bDoDebug)
-    {
-      const FTransform T = NDisplayTargetComponent->GetComponentTransform();
-      if (bShouldUpdateTransform)
-      {
-        UE_LOG(LogTemp, Log, TEXT("HeroFollower [MASTER]: Updated TargetComp world loc %s rot %s"),
-          *T.GetLocation().ToString(),
-          *T.GetRotation().Rotator().ToString());
-      }
-      else
-      {
-        UE_LOG(LogTemp, Log, TEXT("HeroFollower [SLAVE]: Updated TargetComp world loc %s rot %s"),
-          *T.GetLocation().ToString(),
-          *T.GetRotation().Rotator().ToString());
-      }
-    }
+    // Debug logging removed
   }
   else if (!bShouldUpdateTransform && NDisplayTargetComponent && bDoDebug)
   {
-    const FTransform T = NDisplayTargetComponent->GetComponentTransform();
-    UE_LOG(LogTemp, Log, TEXT("HeroFollower [SLAVE]: No hero or target - keeping existing TargetComp world loc %s rot %s"),
-      *T.GetLocation().ToString(),
-      *T.GetRotation().Rotator().ToString());
+    // Debug logging removed
   }
 }
 

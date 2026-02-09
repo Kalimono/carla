@@ -23,6 +23,8 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "PhysicsEngine/PhysicsAsset.h"
 #include "PhysicsEngine/BodySetup.h"
+#include "PhysicsEngine/PhysicsConstraintComponent.h"
+#include "WheeledVehicleMovementComponent.h"
 
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
@@ -753,29 +755,45 @@ void ANDisplayVehicleSync::DisablePhysicsOnActor(AActor* Actor)
     return;
   }
 
-  // Disable root component physics
-  if (UPrimitiveComponent* RootPrim = Cast<UPrimitiveComponent>(Actor->GetRootComponent()))
+  // 1. Destroy all physics constraints first (doors, hood, trunk hinges)
+  //    This detaches constrained bodies so they can be welded to root
+  TArray<UPhysicsConstraintComponent*> Constraints;
+  Actor->GetComponents<UPhysicsConstraintComponent>(Constraints);
+  for (UPhysicsConstraintComponent* Constraint : Constraints)
   {
-    RootPrim->SetSimulatePhysics(false);
-    // RootPrim->SetCollisionEnabled(ECC_NoCollision);
-    RootPrim->PutRigidBodyToSleep();
+    Constraint->BreakConstraint();
+    Constraint->DestroyComponent();
   }
 
-  // Disable physics on all primitive components
-  TArray<UActorComponent*> Components;
-  Actor->GetComponents(UPrimitiveComponent::StaticClass(), Components);
-
-  for (UActorComponent* Component : Components)
+  // 2. Disable vehicle movement component (WheeledVehicle specific)
+  if (AWheeledVehicle* WheeledVehicle = Cast<AWheeledVehicle>(Actor))
   {
-    if (UPrimitiveComponent* PrimComp = Cast<UPrimitiveComponent>(Component))
+    if (UWheeledVehicleMovementComponent* VehicleMovement = WheeledVehicle->GetVehicleMovementComponent())
     {
-      PrimComp->SetSimulatePhysics(false);
-    //   PrimComp->SetCollisionEnabled(ECC_NoCollision);
-      PrimComp->PutRigidBodyToSleep();
+      VehicleMovement->SetComponentTickEnabled(false);
+      VehicleMovement->Deactivate();
     }
   }
 
-  // Disable character movement if it's a character
+  // 3. Disable physics on ALL primitive components and attach them to root
+  USceneComponent* RootComp = Actor->GetRootComponent();
+  TArray<UPrimitiveComponent*> PrimComponents;
+  Actor->GetComponents<UPrimitiveComponent>(PrimComponents);
+
+  for (UPrimitiveComponent* PrimComp : PrimComponents)
+  {
+    PrimComp->SetSimulatePhysics(false);
+    PrimComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    PrimComp->PutRigidBodyToSleep();
+
+    // Re-attach any detached components back to root so they move together
+    if (PrimComp != RootComp && PrimComp->GetAttachParent() == nullptr)
+    {
+      PrimComp->AttachToComponent(RootComp, FAttachmentTransformRules::KeepWorldTransform);
+    }
+  }
+
+  // 4. Disable character movement if it's a character
   if (ACharacter* Character = Cast<ACharacter>(Actor))
   {
     if (Character->GetCharacterMovement())
@@ -785,10 +803,8 @@ void ANDisplayVehicleSync::DisablePhysicsOnActor(AActor* Actor)
     }
   }
 
-  if (bDebugLoggingEnabled)
-  {
-    UE_LOG(LogTemp, Verbose, TEXT("NDisplayVehicleSync: Physics disabled for %s"), *Actor->GetName());
-  }
+  UE_LOG(LogTemp, Log, TEXT("NDisplayVehicleSync: Physics fully disabled for %s (removed %d constraints)"), 
+    *Actor->GetName(), Constraints.Num());
 }
 
 void ANDisplayVehicleSync::EnablePhysicsOnActor(AActor* Actor)
@@ -834,17 +850,11 @@ void ANDisplayVehicleSync::UpdateReplicaTransform(int32 ActorId, const FTransfor
     return;
   }
 
-  // Update the transform
-  ReplicaActor->SetActorTransform(NewTransform);
-
-  // For kinematic actors, also update the velocity
-  if (UPrimitiveComponent* RootPrim = Cast<UPrimitiveComponent>(ReplicaActor->GetRootComponent()))
+  // Move the root component directly - all children (doors, windows, wheels)
+  // are attached to it (physics disabled, constraints removed) so they follow
+  if (USceneComponent* RootComp = ReplicaActor->GetRootComponent())
   {
-    if (!RootPrim->IsSimulatingPhysics())
-    {
-      // This is a kinematic replica, just set the transform
-      return;
-    }
+    RootComp->SetWorldTransform(NewTransform, false, nullptr, ETeleportType::None);
   }
 }
 

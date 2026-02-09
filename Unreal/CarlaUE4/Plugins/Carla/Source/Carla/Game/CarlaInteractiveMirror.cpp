@@ -801,6 +801,7 @@ void ACarlaInteractiveMirror::ProcessUDPPackets()
     if (BytesRead > 0)
     {
       FString Command = FString(BytesRead, (const char*)RecvData.GetData());
+      UE_LOG(LogTemp, Log, TEXT("CarlaInteractiveMirror: Received UDP packet (%d bytes): %s"), BytesRead, *Command);
       ParseUDPCommand(Command);
     }
   }
@@ -824,7 +825,6 @@ void ACarlaInteractiveMirror::ParseUDPCommand(const FString& Command)
     {
       float Value = FCString::Atof(*ValueString);
       SetHorizontalPan(Value);
-      UE_LOG(LogTemp, Verbose, TEXT("CarlaInteractiveMirror: Set pan to %.3f"), Value);
     }
     else if (CommandName.Equals(TEXT("mode"), ESearchCase::IgnoreCase))
     {
@@ -1228,9 +1228,9 @@ void ACarlaInteractiveMirror::UpdateHeroVehicleTracking(float DeltaTime)
                 MirrorSceneCapture->SetRelativeLocation(CurrentConfig.RelativeLocation);
                 MirrorSceneCapture->SetRelativeRotation(CurrentConfig.RelativeRotation);
                 
-                // Reset pan to 0.0 when attaching to hero vehicle
-                // This anchors to the edge (Pan mode) or minimum zoom (ZoomOut mode)
-                HorizontalPan = 0.0f;
+                // Reset pan to 1.0 when attaching to hero vehicle
+                // This sets the default position (zoomed in at far edge)
+                HorizontalPan = 1.0f;
                 if (MirrorImageWidget.IsValid())
                 {
                   MirrorImageWidget->SetHorizontalPan(HorizontalPan);
@@ -1241,7 +1241,7 @@ void ACarlaInteractiveMirror::UpdateHeroVehicleTracking(float DeltaTime)
                   else if (MirrorMode == EMirrorMode::ZoomOutProper) ModeName = TEXT("ZoomOutProper");
                   else if (MirrorMode == EMirrorMode::ZoomOutBorder) ModeName = TEXT("ZoomOutBorder");
                   
-                  UE_LOG(LogTemp, Log, TEXT("CarlaInteractiveMirror: Reset HorizontalPan to 0.0 on hero attach (Mode: %s)"), *ModeName);
+                  UE_LOG(LogTemp, Log, TEXT("CarlaInteractiveMirror: Reset HorizontalPan to 1.0 on hero attach (Mode: %s)"), *ModeName);
                 }
                 
                 UE_LOG(LogTemp, Warning, TEXT("CarlaInteractiveMirror: Attached to hero - Relative Loc: (%.1f, %.1f, %.1f) World Loc: %s"),
