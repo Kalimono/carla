@@ -24,7 +24,7 @@
 #include <carla/geom/Simplification.h>
 #include <carla/road/Deformation.h>
 #include <carla/rpc/String.h>
-#include <OSM2ODR.h>
+// #include <OSM2ODR.h> // Disabled - OSM2ODR not built
 #include <compiler/enable-ue4-macros.h>
 
 #include "Engine/Classes/Interfaces/Interface_CollisionDataProvider.h"

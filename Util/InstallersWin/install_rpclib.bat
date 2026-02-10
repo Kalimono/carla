@@ -83,7 +83,7 @@ cmake .. -G %GENERATOR% %PLATFORM%^
         -DRPCLIB_BUILD_EXAMPLES=OFF^
         -DCMAKE_CXX_FLAGS_RELEASE="/MD /MP"^
         -DCMAKE_INSTALL_PREFIX="%RPC_INSTALL_DIR:\=/%"^
-        "%RPC_SRC_DIR%"
+        "%RPC_SRC_DIR:~0,-1%"
 if %errorlevel% neq 0 goto error_cmake
 
 echo %FILE_N% Building...

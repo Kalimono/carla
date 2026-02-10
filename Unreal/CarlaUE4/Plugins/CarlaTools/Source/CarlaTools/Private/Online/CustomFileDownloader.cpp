@@ -8,50 +8,13 @@
 #include "Http.h"
 #include "Misc/FileHelper.h"
 
-#include <OSM2ODR.h>
+// #include <OSM2ODR.h> // Disabled - OSM2ODR not built
 
 void UCustomFileDownloader::ConvertOSMInOpenDrive(FString FilePath, float Lat_0, float Lon_0)
 {
-  IPlatformFile &FileManager = FPlatformFileManager::Get().GetPlatformFile();
-
-  FString FileContent;
-  // Always first check if the file that you want to manipulate exist.
-  if (FileManager.FileExists(*FilePath))
-  {
-    // We use the LoadFileToString to load the file into
-    if (FFileHelper::LoadFileToString(FileContent, *FilePath, FFileHelper::EHashOptions::None))
-    {
-      UE_LOG(LogCarlaToolsMapGenerator, Warning, TEXT("FileManipulation: Text From File: %s"), *FilePath);
-    }
-    else
-    {
-      UE_LOG(LogCarlaToolsMapGenerator, Warning, TEXT("FileManipulation: Did not load text from file"));
-    }
-  }
-  else
-  {
-    UE_LOG(LogCarlaToolsMapGenerator, Warning, TEXT("File: %s does not exist"), *FilePath);
-    return;
-  }
-  std::string OsmFile = std::string(TCHAR_TO_UTF8(*FileContent));
-
-  osm2odr::OSM2ODRSettings Settings;
-  Settings.proj_string += " +lat_0=" + std::to_string(Lat_0) + " +lon_0=" + std::to_string(Lon_0);
-  Settings.center_map = false;
-  std::string OpenDriveFile = osm2odr::ConvertOSMToOpenDRIVE(OsmFile, Settings);
-
-  FilePath.RemoveFromEnd(".osm", ESearchCase::Type::IgnoreCase);
-  FilePath += ".xodr";
-
-  // We use the LoadFileToString to load the file into
-  if (FFileHelper::SaveStringToFile(FString(OpenDriveFile.c_str()), *FilePath))
-  {
-    UE_LOG(LogCarlaToolsMapGenerator, Warning, TEXT("FileManipulation: Sucsesfuly Written: \"%s\" to the text file"), *FilePath);
-  }
-  else
-  {
-    UE_LOG(LogCarlaToolsMapGenerator, Warning, TEXT("FileManipulation: Failed to write FString to file."));
-  }
+  // OSM2ODR functionality temporarily disabled
+  UE_LOG(LogCarlaToolsMapGenerator, Error, TEXT("OSM2ODR conversion not available - dependency not built"));
+  return;
 }
 
 void UCustomFileDownloader::StartDownload()

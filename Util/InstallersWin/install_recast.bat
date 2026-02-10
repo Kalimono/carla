@@ -82,13 +82,13 @@ cmake .. -G %GENERATOR% %PLATFORM%^
     -DCMAKE_CXX_FLAGS_RELEASE="/MD /MP"^
     -DCMAKE_INSTALL_PREFIX="%RECAST_INSTALL_DIR:\=/%"^
     -DCMAKE_CXX_FLAGS=/D_SILENCE_TR1_NAMESPACE_DEPRECATION_WARNING^
-    "%RECAST_SRC_DIR%"
+    "%RECAST_SRC_DIR:~0,-1%"
 if %errorlevel%  neq 0 goto error_cmake
 
 echo %FILE_N% Building...
 cmake --build . --config Release --target install
 
-if errorlevel  neq 0 goto error_install
+if %errorlevel% neq 0 goto error_install
 
 rem Remove the downloaded Recast & Detour source because is no more needed
 if %DEL_SRC% == true (

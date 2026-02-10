@@ -122,7 +122,7 @@ cmake .. -G "Visual Studio 17 2022" -A x64^
     -DCMAKE_CXX_FLAGS_RELEASE="/MD /MP"^
     -DCMAKE_INSTALL_PREFIX="%FASTDDS_INSTALL_DIR:\=/%"^
     -DCMAKE_CXX_FLAGS=/D_SILENCE_TR1_NAMESPACE_DEPRECATION_WARNING^
-    "%FASTDDS_SRC_DIR%"
+    "%FASTDDS_SRC_DIR:~0,-1%"
 if %errorlevel%  neq 0 goto error_cmake
 
 echo %FILE_N% Building...

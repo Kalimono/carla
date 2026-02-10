@@ -170,7 +170,7 @@ uint32 FUdpMirrorReceiver::Run()
           
           // Parse format: "left:0.5,right:0.7"
           char* Context = nullptr;
-          char* Token = strtok_r(TempBuffer, ",", &Context);
+          char* Token = strtok_s(TempBuffer, ",", &Context);
           
           while (Token != nullptr)
           {
@@ -189,17 +189,17 @@ uint32 FUdpMirrorReceiver::Run()
               Value = FMath::Clamp(Value, 0.0f, 1.0f);
               
               // Case-insensitive comparison
-              if (strcasecmp(Key, "left") == 0)
+              if (_stricmp(Key, "left") == 0)
               {
                 NewLeft = Value;
               }
-              else if (strcasecmp(Key, "right") == 0)
+              else if (_stricmp(Key, "right") == 0)
               {
                 NewRight = Value;
               }
             }
             
-            Token = strtok_r(nullptr, ",", &Context);
+            Token = strtok_s(nullptr, ",", &Context);
           }
           
           // Thread-safe update

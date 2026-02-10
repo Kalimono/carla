@@ -112,7 +112,7 @@ if %BUILD_OSM2ODR% == true (
         -DPROJ_LIBRARY=%INSTALLATION_DIR:/=\%\proj-install\lib\proj.lib^
         -DXercesC_INCLUDE_DIR=%INSTALLATION_DIR:/=\%\xerces-c-3.2.3-install\include^
         -DXercesC_LIBRARY=%INSTALLATION_DIR:/=\%\xerces-c-3.2.3-install\lib\xerces-c.lib^
-        "%OSM2ODR_SOURCE_PATH%"
+        "%OSM2ODR_SOURCE_PATH:~0,-1%"
     if %errorlevel% neq 0 goto error_cmake
 
     cmake --build . --config Release --target install | findstr /V "Up-to-date:"
