@@ -801,7 +801,6 @@ void ACarlaInteractiveMirror::ProcessUDPPackets()
     if (BytesRead > 0)
     {
       FString Command = FString(BytesRead, (const char*)RecvData.GetData());
-      UE_LOG(LogTemp, Log, TEXT("CarlaInteractiveMirror: Received UDP packet (%d bytes): %s"), BytesRead, *Command);
       ParseUDPCommand(Command);
     }
   }

@@ -174,7 +174,8 @@ void ANDisplayVehicleSync::BeginPlay()
   InitializeClusterEventReceiver();
 
   // Set physics simulation based on node type
-  if (!bIsMasterNode && !bPhysicsSimulationEnabled)
+  // Slaves never simulate physics - they receive transforms from master
+  if (!bIsMasterNode)
   {
     SetPhysicsSimulationEnabled(false);
     UE_LOG(LogTemp, Log, TEXT("NDisplayVehicleSync: Physics simulation disabled on slave node"));
@@ -359,6 +360,14 @@ void ANDisplayVehicleSync::ReceiveVehicleTransformEvent(FNDisplayVehicleTransfor
   if (bIsMasterNode)
   {
     return; // Master doesn't receive transform events
+  }
+
+  static int32 TransformLogCount = 0;
+  if (TransformLogCount < 5)
+  {
+    ++TransformLogCount;
+    UE_LOG(LogTemp, Log, TEXT("NDisplayVehicleSync: Received transform event for ActorId=%d, Loc=%s"),
+      TransformData.ActorId, *TransformData.ActorTransform.GetLocation().ToString());
   }
 
   UpdateReplicaTransform(TransformData.ActorId, TransformData.ActorTransform);
@@ -628,6 +637,13 @@ void ANDisplayVehicleSync::BroadcastVehicleTransformEvents()
 
   if (TransformUpdates.Num() > 0)
   {
+    static int32 BroadcastLogCount = 0;
+    if (BroadcastLogCount < 5)
+    {
+      ++BroadcastLogCount;
+      UE_LOG(LogTemp, Log, TEXT("NDisplayVehicleSync: Broadcasting %d vehicle transforms"), TransformUpdates.Num());
+    }
+
     if (!IDisplayCluster::IsAvailable())
     {
       return;
@@ -738,11 +754,26 @@ AActor* ANDisplayVehicleSync::CreateVehicleReplica(const FNDisplayVehicleSpawnDa
     // Track the replica
     TrackedVehicles.Add(SpawnData.ActorId, TWeakObjectPtr<AActor>(ReplicaActor));
 
-    // Disable physics on slave nodes
-    if (!bIsMasterNode && !bPhysicsSimulationEnabled)
+    // Debug: Log the role_name attribute if present
+    if (SpawnData.Attributes.Contains(TEXT("role_name")))
+    {
+      UE_LOG(LogTemp, Log, TEXT("NDisplayVehicleSync: Replica %s spawned with role_name='%s'"), 
+        *ReplicaActor->GetName(), *SpawnData.Attributes[TEXT("role_name")]);
+    }
+    else
+    {
+      UE_LOG(LogTemp, Warning, TEXT("NDisplayVehicleSync: Replica %s spawned WITHOUT role_name attribute!"), 
+        *ReplicaActor->GetName());
+    }
+
+    // Always disable physics on slave node replicas - they are driven by transform replication
+    if (!bIsMasterNode)
     {
       DisablePhysicsOnActor(ReplicaActor);
     }
+
+    UE_LOG(LogTemp, Log, TEXT("NDisplayVehicleSync: Created vehicle replica %s (ID: %d)"), 
+      *ReplicaActor->GetName(), SpawnData.ActorId);
   }
 
   return ReplicaActor;
@@ -765,31 +796,92 @@ void ANDisplayVehicleSync::DisablePhysicsOnActor(AActor* Actor)
     Constraint->DestroyComponent();
   }
 
-  // 2. Disable vehicle movement component (WheeledVehicle specific)
+  // 2. Destroy vehicle movement component (WheeledVehicle specific)
+  //    Must destroy, not just deactivate - otherwise PhysXVehicleManager still
+  //    runs suspension raycasts on it and crashes (access violation in PxVehicleWheels4SuspensionRaycasts)
   if (AWheeledVehicle* WheeledVehicle = Cast<AWheeledVehicle>(Actor))
   {
     if (UWheeledVehicleMovementComponent* VehicleMovement = WheeledVehicle->GetVehicleMovementComponent())
     {
       VehicleMovement->SetComponentTickEnabled(false);
       VehicleMovement->Deactivate();
+      VehicleMovement->DestroyComponent();
+      UE_LOG(LogTemp, Log, TEXT("NDisplayVehicleSync: Destroyed vehicle movement component on replica"));
     }
+  }
+
+  // 2b. Disable AI controller on replica - it will try to call SetThrottleInput()
+  //     on the destroyed movement component and crash
+  if (APawn* Pawn = Cast<APawn>(Actor))
+  {
+    if (AController* Controller = Pawn->GetController())
+    {
+      Controller->SetActorTickEnabled(false);
+      Controller->UnPossess();
+      UE_LOG(LogTemp, Log, TEXT("NDisplayVehicleSync: Unpossessed and disabled AI controller on replica"));
+    }
+  }
+
+  // 2c. Disable CarlaWheeledVehicle's own movement component wrapper tick
+  if (ACarlaWheeledVehicle* CarlaVehicle = Cast<ACarlaWheeledVehicle>(Actor))
+  {
+    CarlaVehicle->SetActorTickEnabled(false);
+    UE_LOG(LogTemp, Log, TEXT("NDisplayVehicleSync: Disabled actor tick on CarlaWheeledVehicle replica"));
   }
 
   // 3. Disable physics on ALL primitive components and attach them to root
   USceneComponent* RootComp = Actor->GetRootComponent();
-  TArray<UPrimitiveComponent*> PrimComponents;
-  Actor->GetComponents<UPrimitiveComponent>(PrimComponents);
-
-  for (UPrimitiveComponent* PrimComp : PrimComponents)
+  if (RootComp)
   {
-    PrimComp->SetSimulatePhysics(false);
-    PrimComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-    PrimComp->PutRigidBodyToSleep();
+    RootComp->SetMobility(EComponentMobility::Movable);
+    RootComp->SetUsingAbsoluteLocation(false);
+    RootComp->SetUsingAbsoluteRotation(false);
+    RootComp->SetUsingAbsoluteScale(false);
+
+    // If root is a skeletal mesh, stop animations so they don't override transforms
+    if (USkeletalMeshComponent* SkeletalMesh = Cast<USkeletalMeshComponent>(RootComp))
+    {
+      SkeletalMesh->SetTickableWhenPaused(false);
+      SkeletalMesh->SetComponentTickEnabled(false);
+      // This ensures the mesh follows the actor transform, not animation
+      SkeletalMesh->bPauseAnims = true;
+      UE_LOG(LogTemp, Log, TEXT("NDisplayVehicleSync: Disabled skeletal mesh animations on root: %s"), *SkeletalMesh->GetName());
+    }
+  }
+
+  TArray<USceneComponent*> SceneComponents;
+  Actor->GetComponents<USceneComponent>(SceneComponents);
+
+  UE_LOG(LogTemp, Log, TEXT("NDisplayVehicleSync: Disabling physics on %s - Root component: %s"),
+    *Actor->GetName(), RootComp ? *RootComp->GetName() : TEXT("(null)"));
+
+  for (USceneComponent* SceneComp : SceneComponents)
+  {
+    SceneComp->SetMobility(EComponentMobility::Movable);
+    SceneComp->SetUsingAbsoluteLocation(false);
+    SceneComp->SetUsingAbsoluteRotation(false);
+    SceneComp->SetUsingAbsoluteScale(false);
+
+    if (UPrimitiveComponent* PrimComp = Cast<UPrimitiveComponent>(SceneComp))
+    {
+      PrimComp->SetSimulatePhysics(false);
+      PrimComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+      PrimComp->PutRigidBodyToSleep();
+    }
+
+    // Stop skeletal mesh animations on ALL skeletal meshes, not just root
+    if (USkeletalMeshComponent* SkeletalMesh = Cast<USkeletalMeshComponent>(SceneComp))
+    {
+      SkeletalMesh->SetComponentTickEnabled(false);
+      SkeletalMesh->bPauseAnims = true;
+      UE_LOG(LogTemp, Log, TEXT("    -> Disabled skeletal mesh animations: %s"), *SkeletalMesh->GetName());
+    }
 
     // Re-attach any detached components back to root so they move together
-    if (PrimComp != RootComp && PrimComp->GetAttachParent() == nullptr)
+    if (RootComp && SceneComp != RootComp && SceneComp->GetAttachParent() == nullptr)
     {
-      PrimComp->AttachToComponent(RootComp, FAttachmentTransformRules::KeepWorldTransform);
+      SceneComp->AttachToComponent(RootComp, FAttachmentTransformRules::SnapToTargetIncludingScale);
+      UE_LOG(LogTemp, Log, TEXT("    -> Re-attached to root: %s"), *SceneComp->GetName());
     }
   }
 
@@ -850,11 +942,24 @@ void ANDisplayVehicleSync::UpdateReplicaTransform(int32 ActorId, const FTransfor
     return;
   }
 
-  // Move the root component directly - all children (doors, windows, wheels)
-  // are attached to it (physics disabled, constraints removed) so they follow
-  if (USceneComponent* RootComp = ReplicaActor->GetRootComponent())
+  static int32 UpdateLogCount = 0;
+  if (UpdateLogCount < 5)
   {
-    RootComp->SetWorldTransform(NewTransform, false, nullptr, ETeleportType::None);
+    ++UpdateLogCount;
+    UE_LOG(LogTemp, Log, TEXT("NDisplayVehicleSync: UpdateReplicaTransform - Actor %s, Root: %s"),
+      *ReplicaActor->GetName(),
+      *ReplicaActor->GetRootComponent()->GetName());
+  }
+
+  // Move the entire actor (this moves all components including body mesh)
+  // All children are attached to root (constraints removed, physics disabled)
+  // so they will move together with the actor
+  ReplicaActor->SetActorTransform(NewTransform);
+
+  if (UpdateLogCount <= 5)
+  {
+    UE_LOG(LogTemp, Log, TEXT("NDisplayVehicleSync: After SetActorTransform - Location: %s"),
+      *ReplicaActor->GetActorLocation().ToString());
   }
 }
 

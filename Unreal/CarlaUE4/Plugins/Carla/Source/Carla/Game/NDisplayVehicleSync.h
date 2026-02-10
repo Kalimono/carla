@@ -213,9 +213,9 @@ protected:
   UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="nDisplay Vehicle Sync")
   FString MasterNodeName = TEXT("");
 
-  /// Enable physics simulation on this node
+  /// Enable physics simulation on this node (only relevant on master; slaves always disable physics on replicas)
   UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="nDisplay Vehicle Sync")
-  bool bPhysicsSimulationEnabled = true;
+  bool bPhysicsSimulationEnabled = false;
 
   /// Target synchronization update rate (Hz)
   UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="nDisplay Vehicle Sync")
