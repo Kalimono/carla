@@ -276,11 +276,11 @@ class World(object):
         # No existing hero found, spawn a new one
         print("No existing hero vehicle found. Spawning new one...")
         
-        # Get a random blueprint.
-        blueprint_list = get_actor_blueprints(self.world, self._actor_filter, self._actor_generation)
+        # Always use Lincoln MKZ 2020 for cabin view.
+        blueprint_list = self.world.get_blueprint_library().filter('vehicle.lincoln.mkz_2020')
         if not blueprint_list:
-            raise ValueError("Couldn't find any blueprints with the specified filters")
-        blueprint = random.choice(blueprint_list)
+            raise ValueError("Couldn't find vehicle.lincoln.mkz_2020 blueprint")
+        blueprint = blueprint_list[0]
         blueprint.set_attribute('role_name', self.actor_role_name)
         if blueprint.has_attribute('terramechanics'):
             blueprint.set_attribute('terramechanics', 'true')

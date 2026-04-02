@@ -31,6 +31,16 @@ void AHeroFollowerActor::BeginPlay()
 
   SetActorTickEnabled(true);
 
+  // Override CameraOffset from command line if provided.
+  // Usage: -HeroCamX=-800 -HeroCamY=0 -HeroCamZ=50
+  float X = CameraOffset.X, Y = CameraOffset.Y, Z = CameraOffset.Z;
+  FParse::Value(FCommandLine::Get(), TEXT("HeroCamX="), X);
+  FParse::Value(FCommandLine::Get(), TEXT("HeroCamY="), Y);
+  FParse::Value(FCommandLine::Get(), TEXT("HeroCamZ="), Z);
+  CameraOffset = FVector(X, Y, Z);
+
+  UE_LOG(LogTemp, Log, TEXT("HeroFollower: CameraOffset = (%.1f, %.1f, %.1f)"), X, Y, Z);
+
   TryFindRootDisplayActorAndTarget();
 
   UE_LOG(LogTemp, Log, TEXT("HeroFollower: Initialized (target component name: %s)"),
@@ -216,8 +226,20 @@ void AHeroFollowerActor::TryFindRootDisplayActorAndTarget()
 
     if (!NDisplayTargetComponent)
     {
-      UE_LOG(LogTemp, Warning, TEXT("HeroFollower: Could not find component named '%s' on nDisplay root actor."),
-        *NDisplayTargetComponentName.ToString());
+      // Named component not found (old .cfg format doesn't expose scene nodes as named components).
+      // Fall back to the root component — moving it moves the entire display cluster hierarchy.
+      USceneComponent* RootComp = RootDisplayActor->GetRootComponent();
+      if (RootComp)
+      {
+        NDisplayTargetComponent = RootComp;
+        UE_LOG(LogTemp, Log, TEXT("HeroFollower: Component '%s' not found, falling back to root component of DisplayClusterRootActor"),
+          *NDisplayTargetComponentName.ToString());
+      }
+      else
+      {
+        UE_LOG(LogTemp, Warning, TEXT("HeroFollower: Could not find component named '%s' and root component is null."),
+          *NDisplayTargetComponentName.ToString());
+      }
     }
   }
 }

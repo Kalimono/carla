@@ -82,7 +82,7 @@ call "%UE4_ROOT%\Engine\Build\BatchFiles\Build.bat"^
 if errorlevel 1 goto error_build
 
 rem Package using existing cooked content
-echo "%UE4_ROOT%\Engine\Build\BatchFiles\RunUAT.bat"^
+echo "%UE4_ROOT%\Engine\Binaries\DotNET\AutomationToolLauncher.exe"^
     BuildCookRun^
     -nocompileeditor^
     -TargetPlatform=Win64^
@@ -97,7 +97,7 @@ echo "%UE4_ROOT%\Engine\Build\BatchFiles\RunUAT.bat"^
     -archivedirectory="!BUILD_FOLDER!"^
     -package^
     -clientconfig=%PACKAGE_CONFIG%
-call "%UE4_ROOT%\Engine\Build\BatchFiles\RunUAT.bat"^
+call "%UE4_ROOT%\Engine\Binaries\DotNET\AutomationToolLauncher.exe"^
     BuildCookRun^
     -nocompileeditor^
     -TargetPlatform=Win64^

@@ -13,7 +13,8 @@
       "anchor_side": "right",
       "enable_border": true,
       "border_width": 5.0,
-      "mode": "pan"
+      "mode": "pan",
+      "udp_port": 9876
     }
   },
   "node_3": {
@@ -30,7 +31,8 @@
       "anchor_side": "left",
       "enable_border": true,
       "border_width": 5.0,
-      "mode": "pan"
+      "mode": "pan",
+      "udp_port": 9877
     }
   }
 }

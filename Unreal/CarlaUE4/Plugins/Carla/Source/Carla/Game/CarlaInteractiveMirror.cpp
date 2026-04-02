@@ -1118,6 +1118,11 @@ bool ACarlaInteractiveMirror::LoadConfigFromJSON()
     {
       CurrentConfig.BaseZoomLevel = FMath::Clamp((float)OverlayObj->GetNumberField(TEXT("base_zoom_level")), 0.1f, 0.95f);
     }
+
+    if (OverlayObj->HasField(TEXT("udp_port")))
+    {
+      UDPPort = (int32)OverlayObj->GetNumberField(TEXT("udp_port"));
+    }
   }
   
   FString ModeName = TEXT("Pan");

@@ -21,7 +21,7 @@ public:
 
   // Offset in HERO VEHICLE local space (cm)
   UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Follower")
-  FVector CameraOffset = FVector(160.0f, 0.0f, 170.0f);
+  FVector CameraOffset = FVector(-800.0f, 0.0f, 50.0f);
 
   // nDisplay scene node component name to drive (must match your config parent)
   // Your config uses parent="socket_cam"
